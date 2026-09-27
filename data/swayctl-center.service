@@ -1,0 +1,12 @@
+[Unit]
+Description=swayctl-center settings daemon for sway
+Documentation=https://github.com/huyhappy/swayctl-center
+# Only meaningful inside a sway session; started from /etc/sway/config.d.
+ConditionEnvironment=SWAYSOCK
+
+[Service]
+Type=dbus
+BusName=io.github.huyhappy.SwayctlCenter
+ExecStart=/usr/bin/swayctl-center daemon
+Restart=on-failure
+RestartSec=2

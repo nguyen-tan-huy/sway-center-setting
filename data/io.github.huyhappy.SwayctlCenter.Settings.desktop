@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Sway Control Center
+GenericName=Settings
+Comment=Configure sway: displays, input, wallpaper, fonts, shortcuts
+Exec=swayctl-center ui
+Icon=preferences-system
+Terminal=false
+Categories=Settings;DesktopSettings;GTK;
+Keywords=sway;settings;display;touchpad;wallpaper;shortcut;
+StartupNotify=true

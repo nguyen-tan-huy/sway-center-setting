@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=io.github.huyhappy.SwayctlCenter
+Exec=/usr/bin/swayctl-center daemon
+SystemdService=swayctl-center.service
