@@ -1,0 +1,12 @@
+/* swayctl-lock; the theme's named colors come from the bar's generated style.css */
+window.lock-window {
+  background: linear-gradient(160deg, alpha(@accent_bg_color, 0.35), @window_bg_color 55%);
+  color: @window_fg_color;
+}
+.lock-time { font-size: 72px; font-weight: 300; font-feature-settings: "tnum"; }
+.lock-date { font-size: 18px; opacity: 0.8; margin-bottom: 28px; }
+.lock-user { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.lock-entry { border-radius: 999px; padding: 4px 14px; min-height: 40px;
+  background: alpha(@window_fg_color, 0.08); }
+.lock-status { opacity: 0.75; margin-top: 4px; min-height: 2.6em; }
+.lock-methods { opacity: 0.6; }

@@ -1,0 +1,144 @@
+/* Built-in look; swayctl-center's generated style.css (theme tokens) loads on
+   top. Uses libadwaita's named colors so it also works on its own. */
+
+/* the OSD look is the shell look: generated style.css paints the panels */
+window.bar { background: none; color: #1d1d1f; }
+.bar-box { padding: 0 6px; }
+.module { margin: 4px 0; }
+.workspace { min-width: 26px; min-height: 0; padding: 0 8px; border-radius: 8px; }
+.workspace.focused { background: @accent_bg_color; color: @accent_fg_color; }
+.workspace.visible { background: alpha(@window_fg_color, 0.1); }
+.workspace.urgent { background: @error_bg_color; color: @error_fg_color; }
+.mode { padding: 0 10px; border-radius: 8px; background: @accent_bg_color; color: @accent_fg_color; }
+.clock, .status { min-height: 0; padding: 0 10px; border-radius: 8px; font-weight: 600; }
+.battery-percent { font-weight: 600; font-feature-settings: "tnum"; }
+.battery-percent.warning { color: @warning_color; }
+.battery-percent.critical { color: @error_color; }
+
+window.quick-window, window.osd-window { background: transparent; }
+/* not fully transparent: a 0-alpha surface gets no pointer input */
+window.quick-catcher { background: alpha(black, 0.01); }
+/* No margin or outer shadow: the compositor (SwayFX) draws the shadow, blur
+   and glass for the whole surface, so the panel must fill it exactly. */
+/* shell panels: generated style.css paints the look (milk pills / glass);
+   default.css keeps the surface clear so shaped glass can follow what's drawn */
+.quick-panel {
+  background: none; color: #1d1d1f;
+  border-radius: 20px; padding: 14px;
+  border: none;
+}
+.quick-panel headerbar { background: none; box-shadow: none; min-height: 36px; }
+.tile { border-radius: 999px; background: alpha(white, 0.42); color: #1d1d1f;
+  border: 1px solid alpha(white, 0.48); }
+.tile button { background: none; box-shadow: none; border-radius: 999px; }
+.tile .tile-main { padding: 8px 12px; }
+.tile .tile-more { padding: 0 10px; }
+.tile .tile-more:hover, .tile .tile-main:hover { background: alpha(black, 0.06); }
+.tile.active { background: @accent_bg_color; color: @accent_fg_color;
+  border: 1px solid alpha(white, 0.35); }
+.tile-title { font-weight: 700; }
+.tile-sub { font-size: 0.85em; opacity: 0.75; }
+.slider-row { padding: 0 4px; border-radius: 999px;
+  background: alpha(white, 0.42); color: #1d1d1f;
+  border: 1px solid alpha(white, 0.48); }
+/* macOS-style bars: accent fill on a soft dark trough */
+scale trough { background: alpha(black, 0.14); min-height: 12px; border-radius: 999px; border: none; }
+scale highlight { background: @accent_bg_color; min-height: 12px; border-radius: 999px; }
+.media { padding: 8px 10px; border-radius: 14px; background: alpha(white, 0.42);
+  border: 1px solid alpha(white, 0.48); color: #1d1d1f; }
+.media-title { font-weight: 700; }
+.quick-footer { padding-top: 4px; }
+
+/* volume/brightness OSD: one milky pill, macOS-like — dark icon and percent,
+   accent-blue bar; the compositor (SwayFX) draws glass/refraction when on */
+.osd {
+  background: alpha(@popover_bg_color, 0.72); color: #1d1d1f;
+  border-radius: 999px; padding: 10px 18px 10px 14px;
+  border: 1px solid alpha(white, 0.42);
+  box-shadow: inset 0 1px 0 alpha(white, 0.48), 0 10px 28px alpha(black, 0.20);
+}
+.osd image, .osd label { color: #1d1d1f; }
+.osd label { font-weight: 600; font-size: 1.15em; font-feature-settings: "tnum"; }
+.osd levelbar, .osd levelbar trough {
+  min-height: 12px; border-radius: 999px;
+  background: alpha(black, 0.14); border: none; box-shadow: none;
+}
+.osd levelbar block.filled {
+  min-height: 12px; border-radius: 999px;
+  background: @accent_bg_color; border: none;
+}
+
+/* notifications: one surface, the cards fill it edge to edge (no outer
+   shadow - the compositor draws shadow/glass from the cards' shape) */
+window.notification-window { background: transparent; }
+/* notifications/calendar: generated style.css paints milk pills */
+.notification-card {
+  background: none; color: #1d1d1f;
+  border-radius: 20px; padding: 12px 12px 12px 14px;
+  border: none;
+}
+.notification-card.critical { border-color: @error_color; }
+.notification-app { opacity: 0.70; color: #1d1d1f; }
+.notification-summary { font-weight: 700; color: #1d1d1f; }
+.notification-image { border-radius: 10px; }
+.notification-close { min-width: 24px; min-height: 24px; padding: 0; }
+.notification-action { border-radius: 999px; }
+.quick-notifications .notification-card { border-radius: 16px; padding: 8px 8px 8px 12px; }
+
+/* calendar under the clock: the panel fills its surface (compositor glass) */
+window.calendar-window { background: transparent; }
+.calendar-panel {
+  background: none; color: #1d1d1f;
+  border-radius: 20px; padding: 14px 14px 10px;
+  border: none;
+}
+.calendar-weekday { font-size: 0.9em; opacity: 0.7; margin: 0 6px; }
+.calendar-date { font-size: 1.35em; font-weight: 700; margin: 0 6px 8px; }
+.calendar-panel calendar, .calendar-panel calendar > grid, .calendar-panel calendar > header {
+  background: none; border: none; box-shadow: none; color: inherit; }
+.calendar-panel calendar > grid > label.day-number { border-radius: 999px; min-width: 30px; min-height: 30px; padding: 0; }
+.calendar-panel calendar > grid > label.today { box-shadow: inset 0 0 0 1px @accent_bg_color; }
+.calendar-panel calendar > grid > label:selected { background: @accent_bg_color; color: @accent_fg_color; }
+.calendar-panel calendar > grid > label.other-month { opacity: 0.35; }
+
+/* Spotlight launcher (ui/launcher.rs; the look of tools/spotlight-demo.html).
+   Three panes: search capsule, results sheet, key hints. The generated
+   style.css turns them into clear glass when the compositor's glass is on. */
+window.launcher-window { background: transparent; }
+.launcher { font-weight: 500; }
+.launcher-search, .launcher-results, .launcher-keys, .launcher-suggest {
+  background: alpha(white, 0.72); color: #1d1d1f;
+  border: 1px solid alpha(white, 0.48);
+  box-shadow: inset 0 1px 0 alpha(white, 0.55);
+}
+.launcher-search { border-radius: 999px; min-height: 60px; padding: 0 22px 0 20px; }
+.launcher-glass { opacity: 0.75; }
+.launcher-entry { font-size: 24px; font-weight: 400; background: none; border: none; box-shadow: none; caret-color: @accent_bg_color; }
+.launcher-entry placeholder { opacity: 0.45; }
+.launcher-mode { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: alpha(currentColor, 0.14); }
+.launcher-results { border-radius: 24px; padding: 8px; }
+.launcher-suggest { border-radius: 24px; padding: 14px 18px; }
+.launcher-keys { border-radius: 999px; padding: 7px 16px; font-size: 12px; font-weight: 600; }
+.launcher-section { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; opacity: 0.55; padding: 10px 12px 4px; }
+.launcher-row { padding: 7px 12px; border-radius: 14px; }
+.launcher-row:hover { background: alpha(currentColor, 0.07); }
+.launcher-row.selected, .launcher-app.selected .launcher-icon, .launcher-emoji-cell.selected {
+  background: alpha(@accent_bg_color, 0.92);
+}
+.launcher-row.selected label { color: white; text-shadow: 0 1px 2px alpha(black, 0.25); }
+.launcher-title { font-size: 15px; font-weight: 600; }
+.launcher-row.top .launcher-title { font-size: 18px; }
+.launcher-sub { font-size: 12px; opacity: 0.62; }
+.launcher-hint { font-size: 12px; font-weight: 600; opacity: 0.9; }
+.launcher-glyph { font-size: 22px; }
+.launcher-calc { font-size: 34px; font-weight: 300; padding: 6px 12px 2px; }
+.launcher-emoji-cell { font-size: 26px; padding: 6px 0; border-radius: 12px; }
+.launcher-empty { padding: 14px 12px; opacity: 0.7; }
+.launcher-app { padding: 4px; }
+.launcher-app .launcher-icon { border-radius: 14px; padding: 2px; }
+.launcher-app-name { font-size: 11px; font-weight: 600; }
+.launcher-kbd { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: alpha(currentColor, 0.16); }
+.launcher-thumb { border-radius: 6px; }
+/* the results scroll inside the sheet: the scroller itself draws nothing */
+.launcher-results scrolledwindow, .launcher-results viewport { background: none; border: none; box-shadow: none; }
+.launcher-results scrollbar { background: none; border: none; }
