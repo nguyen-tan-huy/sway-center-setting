@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Sway (swayctl-fx)
+Comment=Sway with effects, smooth scrolling and the swayctl patches. Pick "Sway" if it misbehaves.
+Exec=swayctl-fx
+Type=Application
+DesktopNames=sway

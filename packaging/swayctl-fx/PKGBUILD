@@ -1,0 +1,50 @@
+# Maintainer: huyhappy <nguyentanhuy.work@gmail.com>
+# SwayFX + SceneFX with the swayctl patches (branch "swayctl"), installed NEXT TO
+# sway rather than replacing it: the binary is swayctl-fx and it gets its own
+# login session, so "Sway" stays in the login menu as the fallback if the fork
+# ever misbehaves. Shares ~/.config/sway/config with sway; swayctl-center sends
+# the fork-only commands (blur, corner_radius...) over IPC, so that config
+# stays valid for plain sway.
+pkgname=swayctl-fx
+pkgver=0.6.r26.25b8d070fdc169f
+pkgrel=1
+pkgdesc="SwayFX with swayctl-center patches, installed alongside sway"
+arch=(x86_64)
+url="https://github.com/WillPower3309/swayfx"
+license=(MIT)
+# swaymsg/swaynag/swaybar come from sway itself and work with the fork
+depends=(sway 'wlroots0.20' cairo pango json-c libinput libxkbcommon pixman pcre2 gdk-pixbuf2
+         libglvnd libdrm)
+makedepends=(git meson ninja wayland-protocols)
+# Local clones by default; point these at your published forks to build elsewhere.
+_fx="${SWAYCTL_FX_DIR:-$startdir/../../../swayctl-fx}"
+source=("swayfx::git+file://$_fx/swayfx#branch=swayctl"
+        "scenefx::git+file://$_fx/scenefx#branch=swayctl"
+        swayctl-fx.desktop)
+sha256sums=(SKIP SKIP SKIP)
+
+pkgver() {
+  cd swayfx
+  # both repos: a scenefx-only change (shader) must still bump the version
+  local fx sc
+  fx=$(git rev-parse --short HEAD)
+  sc=$(git -C "$srcdir/scenefx" rev-parse --short HEAD)
+  printf "0.6.r%s.%s%s" "$(git rev-list --count 0.6..HEAD)" "$fx" "$sc"
+}
+
+prepare() {
+  mkdir -p swayfx/subprojects
+  ln -sfn "$srcdir/scenefx" swayfx/subprojects/scenefx
+}
+
+build() {
+  arch-meson swayfx build -Dman-pages=disabled -Dtray=disabled -Dscenefx:default_library=static \
+    -Dscenefx:examples=false --force-fallback-for=scenefx
+  meson compile -C build
+}
+
+package() {
+  install -Dm755 build/sway/sway "$pkgdir/usr/bin/swayctl-fx"
+  install -Dm644 swayctl-fx.desktop "$pkgdir/usr/share/wayland-sessions/swayctl-fx.desktop"
+  install -Dm644 swayfx/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

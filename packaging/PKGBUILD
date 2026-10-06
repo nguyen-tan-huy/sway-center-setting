@@ -1,7 +1,7 @@
 # Maintainer: huyhappy <nguyentanhuy.work@gmail.com>
 pkgname=swayctl-center
 pkgver=0.1.0
-pkgrel=1
+pkgrel=25
 pkgdesc="One settings app for sway: install it and configure sway without touching config files"
 arch=(any)
 url="https://github.com/huyhappy/swayctl-center"
@@ -9,21 +9,24 @@ license=(MIT)
 # foot: the terminal in sway's stock config (Super+Enter); fuzzel: the launcher until
 # Walker is installed; polkit-gnome: the password prompt plain sway doesn't have;
 # ttf-nerd-fonts-symbols: the bar's icons
-depends=(sway swaybg wlsunset waybar swaync swayidle swaylock cliphist wl-clipboard foot fuzzel
+# the bar, Quick Settings, notifications and lock screen are swayctl-bar's (waybar/swaync/swaylock
+# are no longer used)
+depends=(sway swayctl-bar swaybg wlsunset swayidle cliphist wl-clipboard foot fuzzel
          python python-gobject gtk4 gsettings-desktop-schemas xdg-desktop-portal-gtk polkit polkit-gnome
          ttf-nerd-fonts-symbols)
-optdepends=('networkmanager: Network page'
+optdepends=('adw-gtk-theme: GTK 3 apps, browsers and Electron switch light/dark (adw-gtk3 / adw-gtk3-dark)'
+            'networkmanager: Network page'
             'bluez: Bluetooth page'
             'libpulse: Sound page (pactl; works with PipeWire via pipewire-pulse)'
             'upower: battery on the Power page'
             'power-profiles-daemon: power modes on the Power page'
             'brightnessctl: screen brightness on the Power page'
             'wl-clip-persist: keep copied text after the app closes (Clipboard page)'
-            'python-evdev: smooth touchpad/mouse scrolling (Mouse & Touchpad page)'
             'walker: the launcher (Launcher page); needs elephant-bin and elephant-*-bin providers from the AUR'
             'keyd: swap and remap keys (Keyboard page)'
             'fcitx5: input method for Vietnamese, Chinese, Japanese... (Input Method page)'
-            'pavucontrol: opened by clicking the volume in the bar')
+            'pavucontrol: opened by clicking the volume in the bar'
+            'swayctl-fx: SwayFX session: effects, liquid glass, smooth scrolling')
 source=()
 
 _srcroot="$startdir/.."
@@ -39,5 +42,7 @@ package() {
     "$pkgdir/usr/share/dbus-1/services/io.github.huyhappy.SwayctlCenter.service"
   install -Dm644 data/io.github.huyhappy.SwayctlCenter.Settings.desktop \
     "$pkgdir/usr/share/applications/io.github.huyhappy.SwayctlCenter.Settings.desktop"
+  install -Dm644 data/icons/io.github.huyhappy.SwayctlCenter.Settings.png \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/io.github.huyhappy.SwayctlCenter.Settings.png"
   install -Dm644 data/50-swayctl-center.conf "$pkgdir/etc/sway/config.d/50-swayctl-center.conf"
 }
