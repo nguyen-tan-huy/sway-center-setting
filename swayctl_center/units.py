@@ -77,7 +77,13 @@ def start(unit: str, argv: list[str], description: str, restart: bool = True,
                         f"--description={description}", *props, *env, *argv],
                        capture_output=True, text=True)
     if r.returncode != 0:
-        return r.stderr.strip() or f"systemd-run exited with {r.returncode}"
+        err = r.stderr.strip() or f"systemd-run exited with {r.returncode}"
+        if "already loaded" in err:
+            # a previous run's leftover processes keep the old unit alive; not
+            # killed here: they can be apps the user opened from it
+            err += (f". Something from the last run is still in it; to clear it: "
+                    f"systemctl --user kill --signal=KILL {unit}; systemctl --user reset-failed {unit}")
+        return err
     return None
 
 

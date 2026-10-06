@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("file")
     sub.add_parser("doctor", help="check that everything swayctl-center needs is in place")
     p = sub.add_parser("action", help="theme.toggle, night_light.toggle|warmer|cooler, lock, "
-                                      "notifications.panel|dnd, clipboard.history|delete|clear, launcher.open")
+                                      "notifications.panel|dnd, preset.modern|classic, clipboard.history|delete|clear, launcher.open")
     p.add_argument("name")
     args = parser.parse_args(argv)
 

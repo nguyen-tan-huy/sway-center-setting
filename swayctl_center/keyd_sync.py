@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 TARGET = Path("/etc/keyd/default.conf")
-MARKER = "# managed by swayctl-center: change it in Sway Control Center > Keyboard"
+MARKER = "# managed by swayctl-center: change it in ChoCaiDat > Keyboard"
 # a key turned into a modifier acts as that modifier's layer, as keyd wants
 MODIFIER_LAYERS = {"leftcontrol": "control", "rightcontrol": "control", "leftshift": "shift",
                    "rightshift": "shift", "leftalt": "alt", "rightalt": "altgr",

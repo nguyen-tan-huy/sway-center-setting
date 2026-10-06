@@ -161,7 +161,13 @@ class OutputsModule:
         cmds = []
         for ident, cfg in v["config"].items():
             o = live.get(ident)
-            # Not connected: sway stores the config for when it shows up.
+            if o is None and live:
+                # Not connected: skip it. Even an unchanged command for a missing output
+                # makes sway emit output events, which the daemon answers by
+                # re-applying -> an endless loop (cursor leave/enter every ~0.5s, flickering
+                # hovers). The daemon applies it on the output event when it's plugged in.
+                continue
+            # Live state unknown: sway stores the config for when it shows up.
             if o is None or differs(cfg, o):
                 cmds.append(command(ident, cfg))
         return cmds

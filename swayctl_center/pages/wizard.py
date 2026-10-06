@@ -22,7 +22,7 @@ COMPONENTS = [
 
 class SetupAssistant(Gtk.Window):
     def __init__(self, win):
-        super().__init__(title="Set up Sway Control Center", transient_for=win, modal=True,
+        super().__init__(title="Set up ChoCaiDat", transient_for=win, modal=True,
                          application=win.get_application(),
                          default_width=620, default_height=560)
         self.win = win
@@ -66,7 +66,7 @@ class SetupAssistant(Gtk.Window):
         return box
 
     def _welcome(self):
-        box = self._box("Welcome", "Sway Control Center sets up and manages your sway desktop: displays, "
+        box = self._box("Welcome", "ChoCaiDat sets up and manages your sway desktop: displays, "
                         "input, appearance, the bar, notifications and more, without editing config files. "
                         "First, a quick check that everything it needs is installed.")
         box.append(ChecksList(show_ok=False))
@@ -74,7 +74,7 @@ class SetupAssistant(Gtk.Window):
 
     def _restore(self):
         box = self._box("Restore a backup", "Coming from another computer, or reinstalling? Import a backup "
-                        "exported from Sway Control Center to get your settings back. Otherwise, skip this.")
+                        "exported from ChoCaiDat to get your settings back. Otherwise, skip this.")
         btn = Gtk.Button(label="Import a backup…", halign=Gtk.Align.START)
         self.restore_result = Gtk.Label(xalign=0, wrap=True)
         btn.connect("clicked", lambda _b: import_backup(self.win, self.restore_result.set_label,
@@ -84,7 +84,7 @@ class SetupAssistant(Gtk.Window):
         return box
 
     def _components(self):
-        box = self._box("What should Sway Control Center run?",
+        box = self._box("What should ChoCaiDat run?",
                         "It styles these with your theme and font and keeps them running. Anything your own "
                         "sway config already starts is left to you.")
         self.comp_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)

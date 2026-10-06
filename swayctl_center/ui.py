@@ -19,10 +19,13 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from . import swayipc  # noqa: E402
+from .i18n import _  # noqa: E402
 from .client import CallError, Client, DaemonUnavailable  # noqa: E402
+from .store import config_dir as store_config_dir  # noqa: E402
 from .daemon import BUS_NAME, INTERFACE, OBJECT_PATH  # noqa: E402
 from .modules.outputs import format_mode  # noqa: E402
 
@@ -31,6 +34,11 @@ APP_ID = "io.github.huyhappy.SwayctlCenter.Settings"
 # How enum values read in dropdowns; anything missing is prettified.
 CHOICE_LABELS: dict[str, dict[str, str]] = {
     "appearance.schedule": {"sun": "Sunrise and sunset", "custom": "At set times"},
+    "auth.lock_screen": {"swaylock": "swaylock (password only)",
+                         "swayctl-lock": "swayctl-lock (password and fingerprint at once)"},
+    "bar.program": {"waybar": "Waybar", "swayctl-bar": "swayctl-bar (with Quick Settings)"},
+    "appearance.style": {"classic": "Classic (flat bar, square corners)",
+                         "modern": "Modern (floating bar, rounded)"},
     "keyremap.copilot": {"default": "Copilot (unchanged)", "super": "Super (Windows key)",
                          "rightcontrol": "Right Ctrl"},
     "night_light.mode": {"off": "Off", "always": "Always on", "sun": "Sunset to sunrise",
@@ -61,9 +69,9 @@ CHOICE_LABELS: dict[str, dict[str, str]] = {
 def choice_label(path: str, value: str) -> str:
     label = CHOICE_LABELS.get(path, {}).get(value)
     if label:
-        return label
+        return _(label)
     text = value.replace("_", " ").replace("-", " ")
-    return text[:1].upper() + text[1:]
+    return _(text[:1].upper() + text[1:])
 
 
 # Sections of a page, in order; keys not listed go at the end.
@@ -75,14 +83,13 @@ GROUPS: dict[str, list[tuple[str, list[str]]]] = {
                        ("Typing", ["repeat_delay", "repeat_rate"])],
     "bar": [("", ["position", "height", "theme"]),
             ("Modules", ["modules_left", "modules_center", "modules_right"]),
-            ("", ["clock_format"]),
-            ("Advanced", ["layer", "spacing", "exclusive", "margin_top", "margin_right", "margin_bottom",
-                          "margin_left", "clock_format_alt"])],
+            ("", ["clock_format"])],
+    "effects": [("", ["corner_radius", "dim_inactive", "glass"]),
+                ("Liquid glass", ["glass_refraction", "glass_thickness", "glass_edge",
+                                  "glass_blur", "glass_opacity",
+                                  "glass_highlight", "glass_chroma"])],
     "notifications": [("", ["dnd_on_start", "position_x", "position_y", "timeout"]),
-                      ("Advanced", ["layer", "width", "image_visibility", "timeout_low", "timeout_critical",
-                                    "control_center_width", "control_center_height", "fit_to_screen",
-                                    "grouping", "relative_timestamps", "hide_on_clear", "hide_on_action",
-                                    "keyboard_shortcuts"])],
+                      ("Advanced", ["output", "width", "max_visible", "timeout_low", "timeout_critical"])],
     "launcher": [("Show in results", ["apps", "settings", "calc", "files", "websearch"]),
                  ("", ["search_engine"]),
                  ("~Where to look for files", ["file_folders", "file_excluded", "file_watch", "files_in_results"]),
@@ -97,7 +104,17 @@ SLIDERS = {
     "scrolling.touchpad_glide": ("Short", "Long"), "scrolling.mouse_glide": ("Short", "Long"),
     "input.touchpad.pointer_accel": ("Slow", "Fast"), "input.pointer.pointer_accel": ("Slow", "Fast"),
     "input.touchpad.scroll_factor": ("Slow", "Fast"), "input.pointer.scroll_factor": ("Slow", "Fast"),
+    "effects.glass_refraction": ("Flat", "Bend"), "effects.glass_blur": ("Clear", "Frosted"),
+    "effects.glass_opacity": ("Clear", "Opaque"), "effects.glass_highlight": ("Matte", "Shiny"),
+    "effects.glass_edge": ("Thin", "Thick"), "effects.glass_chroma": ("None", "Rainbow"),
+    "effects.glass_thickness": ("Thin", "Thick"),
 }
+
+
+def slider_out(key_type: str, raw: float) -> int | float:
+    """What a slider sends to the daemon: Gtk.Scale is always float, so int
+    settings (glass_opacity, glass_refraction...) must be whole numbers."""
+    return int(round(raw)) if key_type == "int" else round(raw, 3)
 
 # seconds, picked from a list
 DURATION_KEYS = {"idle.lock_after", "idle.screen_off_after", "idle.suspend_after"}
@@ -117,6 +134,17 @@ def _duration_label(secs: int) -> str:
 
 
 FONT_KEYS = {"font.family", "font.monospace_family"}
+
+# "str" keys holding a monitor name, picked from the connected ones; the label is for "".
+OUTPUT_PICKERS = {"notifications.output": "Focused monitor"}
+
+
+def _output_names() -> list[str]:
+    try:
+        return [o["name"] for o in swayipc.Connection().get_outputs()]
+    except (swayipc.IPCError, OSError):
+        return []
+
 
 PLACEHOLDERS = {
     "background.color": "Theme color",
@@ -146,10 +174,10 @@ PAGES = {
     "displays": [("outputs", ""), ("night_light", "Night Light")],
     "keyboard": [("input.keyboard", ""), ("keyremap", "Swap & remap keys"), ("input_method", "Typing other languages"),
                  ("keybindings", "Shortcuts")],
-    "power": [("system:power", ""), ("idle", "Lock & Idle")],
+    "power": [("system:power", ""), ("idle", "Lock & Idle"), ("auth", "Fingerprint")],
     "appearance": [("appearance", ""), ("background", "Wallpaper"), ("font", "Fonts"),
                    ("theming", "Other apps"), ("location", "Location")],
-    "desktop": [("layout", "Windows"), ("bar", "Bar")],
+    "desktop": [("layout", "Windows"), ("effects", "Effects"), ("bar", "Bar")],
     "notifications": [("notifications", "")],
     "search": [("launcher", "Launcher"), ("clipboard", "Clipboard")],
 }
@@ -218,7 +246,7 @@ def _row(title: str, control: Gtk.Widget, subtitle: str | None = None) -> Gtk.Bo
     label = Gtk.Label(label=title, xalign=0)
     labels.append(label)
     if subtitle:
-        sub = Gtk.Label(label=subtitle, xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE)
+        sub = Gtk.Label(label=subtitle, xalign=0, wrap=True, max_width_chars=70)
         sub.add_css_class("dim-label")
         sub.add_css_class("caption")
         labels.append(sub)
@@ -229,7 +257,7 @@ def _row(title: str, control: Gtk.Widget, subtitle: str | None = None) -> Gtk.Bo
 
 
 def _heading(text: str) -> Gtk.Label:
-    label = Gtk.Label(label=text, xalign=0)
+    label = Gtk.Label(label=_(text), xalign=0)
     label.add_css_class("title-2")
     return label
 
@@ -249,6 +277,40 @@ class Page(Gtk.Box):
 
     def update_status(self, status: dict[str, Any]) -> None:
         pass
+
+
+_PANE_NAMES = {"frame", "headerbar", "entry", "spinbutton", "dropdown", "searchentry", "toast", "switch"}
+_CHIP_CLASSES = ("title-1", "title-2", "title-3", "title-4", "heading", "status", "dim-label")
+
+
+def _is_glass_pane(w: Gtk.Widget) -> bool:
+    """A pane of glass in the settings window (as app_glass_css draws them):
+    tagged light/dark as a whole, its contents follow."""
+    name = w.get_css_name()
+    if name in _PANE_NAMES:
+        return True
+    parent = w.get_parent()
+    if name == "row" and parent is not None and parent.get_css_name() == "list":
+        # sidebar entries and rows of unframed lists are pills; framed ones are the frame's
+        return not parent.has_css_class("boxed-list") and not _inside(parent, "frame")
+    if name == "button":
+        return not w.has_css_class("flat") and not _inside(w, "frame", "row", "headerbar")
+    if name == "label":
+        if _inside(w, "frame", "row", "button", "headerbar", "list", "entry", "spinbutton"):
+            return False
+        return any(w.has_css_class(c) for c in _CHIP_CLASSES) or (parent is not None and parent.get_css_name() == "box")
+    if name == "expander-widget":
+        return True
+    return False
+
+
+def _inside(w: Gtk.Widget, *names: str) -> bool:
+    p = w.get_parent()
+    while p is not None:
+        if p.get_css_name() in names:
+            return True
+        p = p.get_parent()
+    return False
 
 
 def _status_label() -> Gtk.Label:
@@ -284,7 +346,7 @@ class SettingRow(Gtk.ListBoxRow):
         box = Gtk.Box(spacing=6)
         box.append(self.control)
         box.append(self.reset_btn)
-        self.set_child(_row(key["label"], box))
+        self.set_child(_row(key["label"], box, key.get("help")))
 
     def _build_control(self) -> Gtk.Widget:
         t = self.key["type"]
@@ -301,8 +363,13 @@ class SettingRow(Gtk.ListBoxRow):
         elif t == "enum":
             w = Gtk.DropDown.new_from_strings([choice_label(self.path, c) for c in self.key["choices"]])
             w.connect("notify::selected", lambda d, _p: self._changed(self.key["choices"][d.get_selected()]))
+        elif self.path in OUTPUT_PICKERS:
+            # "" first (the focused monitor), then the connected ones by connector name
+            self._outputs = [""] + _output_names()
+            w = Gtk.DropDown.new_from_strings([OUTPUT_PICKERS[self.path]] + self._outputs[1:])
+            w.connect("notify::selected", lambda d, _p: self._changed(self._outputs[d.get_selected()]))
         else:  # str
-            w = Gtk.Entry(width_chars=24, placeholder_text=PLACEHOLDERS.get(self.path, ""))
+            w = Gtk.Entry(width_chars=24, placeholder_text=_(PLACEHOLDERS.get(self.path, "")))
             w.connect("activate", lambda e: self._changed(e.get_text()))
             focus = Gtk.EventControllerFocus()
             focus.connect("leave", lambda _c: self._changed(w.get_text()))
@@ -336,6 +403,11 @@ class SettingRow(Gtk.ListBoxRow):
             w.set_value(value)
         elif t == "enum":
             w.set_selected(self.key["choices"].index(value))
+        elif self.path in OUTPUT_PICKERS:
+            if value not in self._outputs:  # saved monitor isn't plugged in right now
+                self._outputs.append(value)
+                w.get_model().append(value)
+            w.set_selected(self._outputs.index(value))
         elif w.get_text() != value:
             w.set_text(value)
         is_default = value == self.key["default"]
@@ -399,7 +471,7 @@ class DurationRow(Gtk.ListBoxRow):
         self.model = Gtk.StringList()
         self.dropdown = Gtk.DropDown(model=self.model, valign=Gtk.Align.CENTER)
         self.dropdown.connect("notify::selected", self._changed)
-        self.set_child(_row(key["label"].split(" (")[0], self.dropdown))
+        self.set_child(_row(key["label"].split(" (")[0], self.dropdown, key.get("help")))
 
     def _changed(self, dd, _p) -> None:
         i = dd.get_selected()
@@ -425,7 +497,8 @@ class SliderRow(Gtk.ListBoxRow):
         self.current: float | None = None
         self._timer = 0
         lo, hi = key.get("min", 0.0), key.get("max", 1.0)
-        self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, (hi - lo) / 100)
+        step = 1.0 if key["type"] == "int" else (hi - lo) / 100
+        self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, step)
         self.scale.set_draw_value(False)
         self.scale.set_hexpand(True)
         self.scale.set_size_request(220, -1)
@@ -438,7 +511,7 @@ class SliderRow(Gtk.ListBoxRow):
                 w.add_css_class("dim-label")
                 w.add_css_class("caption")
             box.append(w)
-        self.set_child(_row(key["label"], box))
+        self.set_child(_row(key["label"], box, key.get("help")))
 
     def _moved(self, scale) -> None:
         if self.page.updating:
@@ -448,7 +521,7 @@ class SliderRow(Gtk.ListBoxRow):
 
         def fire():
             self._timer = 0
-            value = round(scale.get_value(), 3)
+            value = slider_out(self.key["type"], scale.get_value())
             if value != self.current:
                 self.page.win.set(self.path, value)
             return GLib.SOURCE_REMOVE
@@ -475,7 +548,7 @@ class FontRow(Gtk.ListBoxRow):
         box = Gtk.Box(spacing=6)
         box.append(self.button)
         box.append(self.reset_btn)
-        self.set_child(_row(key["label"], box))
+        self.set_child(_row(key["label"], box, key.get("help")))
 
     def _changed(self, button, _p) -> None:
         desc = button.get_font_desc()
@@ -491,8 +564,15 @@ class FontRow(Gtk.ListBoxRow):
         _show_reset(self.reset_btn, value == self.key["default"])
 
 
+# what each swayctl-bar module is, in the module pickers
+MODULE_LABELS = {
+    "workspaces": "Workspaces", "mode": "Sway mode (resize…)", "window": "Window title",
+    "clock": "Clock", "tray": "Tray (app icons)", "status": "Quick Settings (Wi-Fi, sound, battery…)",
+}
+
+
 class ModulesRow(Gtk.ListBoxRow):
-    """An ordered list of bar modules: move, remove, add from the catalog or by name."""
+    """An ordered list of bar modules: move, remove, add from swayctl-bar's modules."""
 
     def __init__(self, page: Page, key: dict[str, Any]):
         super().__init__(activatable=False)
@@ -501,23 +581,33 @@ class ModulesRow(Gtk.ListBoxRow):
         self.current: list[str] = []
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         head = Gtk.Box(spacing=6)
-        head.append(Gtk.Label(label=key["label"], xalign=0, hexpand=True))
+        title = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
+        title.append(Gtk.Label(label=key["label"], xalign=0))
+        if key.get("help"):
+            sub = Gtk.Label(label=key["help"], xalign=0, wrap=True)
+            sub.add_css_class("dim-label")
+            sub.add_css_class("caption")
+            title.append(sub)
+        head.append(title)
+        self.pick = Gtk.DropDown.new_from_strings([_("Add a module…")])
+        self.pick.connect("notify::selected", self._picked)
+        head.append(self.pick)
         self.reset_btn = _reset_button(page, self.path)
         head.append(self.reset_btn)
         outer.append(head)
         self.chips = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, column_spacing=6, row_spacing=6,
                                  max_children_per_line=20)
         outer.append(self.chips)
-        add = Gtk.Box(spacing=6)
-        self.catalog = ["Add a module…"] + list(key.get("choices_hint", []))
-        self.pick = Gtk.DropDown.new_from_strings(self.catalog)
-        self.pick.connect("notify::selected", self._picked)
-        self.custom = Gtk.Entry(placeholder_text="or type a name, e.g. custom/media", hexpand=True)
-        self.custom.connect("activate", lambda e: self._add(e.get_text().strip()))
-        add.append(self.pick)
-        add.append(self.custom)
-        outer.append(add)
+        self.catalog: list[str] = []
         self.set_child(outer)
+
+    def _refresh_catalog(self) -> None:
+        """Only modules not on this side yet."""
+        self.catalog = [m for m in self.key.get("choices_hint", []) if m not in self.current]
+        self.pick.set_model(Gtk.StringList.new([_("Add a module…")] + [_(MODULE_LABELS.get(m, m))
+                                                                        for m in self.catalog]))
+        self.pick.set_selected(0)
+        self.pick.set_sensitive(bool(self.catalog))
 
     def _save(self, items: list[str]) -> None:
         if not self.page.updating and items != self.current:
@@ -525,14 +615,12 @@ class ModulesRow(Gtk.ListBoxRow):
 
     def _picked(self, dd, _p) -> None:
         i = dd.get_selected()
-        if i > 0 and not self.page.updating:
-            self._add(self.catalog[i])
-            dd.set_selected(0)
+        if 0 < i <= len(self.catalog) and not self.page.updating:
+            self._add(self.catalog[i - 1])
 
     def _add(self, name: str) -> None:
         if name and name not in self.current:
             self._save(self.current + [name])
-            self.custom.set_text("")
 
     def _move(self, i: int, delta: int) -> None:
         j = i + delta
@@ -547,27 +635,28 @@ class ModulesRow(Gtk.ListBoxRow):
         for i, name in enumerate(value):
             chip = Gtk.Box(spacing=0)
             chip.add_css_class("chip")
-            for icon, tip, cb in (("go-previous-symbolic", "Move left", lambda _b, i=i: self._move(i, -1)),):
+            for icon, tip, cb in (("go-previous-symbolic", _("Move left"), lambda _b, i=i: self._move(i, -1)),):
                 b = Gtk.Button(icon_name=icon, tooltip_text=tip)
                 b.add_css_class("flat")
                 b.set_sensitive(i > 0)
                 b.connect("clicked", cb)
                 chip.append(b)
-            chip.append(Gtk.Label(label=name, margin_start=4, margin_end=4))
-            nxt = Gtk.Button(icon_name="go-next-symbolic", tooltip_text="Move right")
+            chip.append(Gtk.Label(label=_(MODULE_LABELS.get(name, name)), margin_start=4, margin_end=4))
+            nxt = Gtk.Button(icon_name="go-next-symbolic", tooltip_text=_("Move right"))
             nxt.add_css_class("flat")
             nxt.set_sensitive(i < len(value) - 1)
             nxt.connect("clicked", lambda _b, i=i: self._move(i, 1))
             chip.append(nxt)
-            rm = Gtk.Button(icon_name="window-close-symbolic", tooltip_text="Remove")
+            rm = Gtk.Button(icon_name="window-close-symbolic", tooltip_text=_("Remove"))
             rm.add_css_class("flat")
             rm.connect("clicked", lambda _b, n=name: self._save([x for x in self.current if x != n]))
             chip.append(rm)
             self.chips.append(chip)
         if not value:
-            empty = Gtk.Label(label="(empty)")
+            empty = Gtk.Label(label=_("(empty)"))
             empty.add_css_class("dim-label")
             self.chips.append(empty)
+        self._refresh_catalog()
         _show_reset(self.reset_btn, value == self.key["default"])
 
 
@@ -665,12 +754,12 @@ class SchemaPage(Page):
                 lb.append(row)
             if title_ == "Advanced" or title_.startswith("~"):
                 # rarely needed: out of the way until asked for
-                exp = Gtk.Expander(label=title_.lstrip("~"), child=_frame(lb))
+                exp = Gtk.Expander(label=_(title_.lstrip("~")), child=_frame(lb))
                 exp.add_css_class("heading")
                 box.append(exp)
             else:
                 if title_:
-                    h = Gtk.Label(label=title_, xalign=0)
+                    h = Gtk.Label(label=_(title_), xalign=0)
                     h.add_css_class("heading")
                     box.append(h)
                 box.append(_frame(lb))
@@ -719,7 +808,7 @@ class ThemeRow(Gtk.ListBoxRow):
         self.model = Gtk.StringList()
         self.dropdown = Gtk.DropDown(model=self.model)
         self.dropdown.connect("notify::selected", self._changed)
-        self.set_child(_row(key["label"], self.dropdown))
+        self.set_child(_row(key["label"], self.dropdown, key.get("help")))
 
     def set_names(self, names: list[str]) -> None:
         if self.empty_label is not None:
@@ -757,9 +846,15 @@ class AppearancePage(SchemaPage):
 
     def __init__(self, win, section, title, keys):
         super().__init__(win, section, title, keys)
-        toggle = Gtk.Button(label="Switch light/dark now", halign=Gtk.Align.START)
+        toggle = Gtk.Button(label=_("Switch light/dark now"), halign=Gtk.Align.START)
         toggle.connect("clicked", lambda _b: win.action("theme.toggle"))
-        self.insert_child_after(toggle, self.status)
+        modern = Gtk.Button(label=_("Use the modern look"), halign=Gtk.Align.START,
+                            tooltip_text="Liquid glass, floating rounded bar, gaps between windows")
+        modern.connect("clicked", lambda _b: win.action("preset.modern"))
+        buttons = Gtk.Box(spacing=8)
+        buttons.append(toggle)
+        buttons.append(modern)
+        self.insert_child_after(buttons, self.status)
         self.swatches = Gtk.Box(spacing=0, halign=Gtk.Align.START)
         self.insert_child_after(self.swatches, self.get_first_child())
 
@@ -771,9 +866,11 @@ class AppearancePage(SchemaPage):
         t = a["theme"]
         names = [x["name"] for x in a["themes"]]
         for name in ("light_theme", "dark_theme"):
-            self.rows[name].set_names(names)
+            if name in self.rows:  # hidden: only "light" and "dark" are left
+                self.rows[name].set_names(names)
         when = {"fixed": "always", "override": "switched by hand until", "schedule": "until"}[a["source"]]
-        text = f"Now using {t['name']} ({a['variant']}), {when}"
+        name = t["name"].capitalize() if t["name"] == a["variant"] else f"{t['name']} ({a['variant']})"
+        text = f"Now using {name}, {when}"
         if a["source"] != "fixed" and a["next_change"]:
             text += f" {_fmt_time(a['next_change'])}"
         if a["missing_theme"]:
@@ -789,7 +886,7 @@ class AppearancePage(SchemaPage):
             sw = Gtk.Label(label="  ", tooltip_text=f"{role} {t[role]}")
             sw.add_css_class(f"swatch-{role}")
             self.swatches.append(sw)
-        self.win.set_swatch_colors(t)
+        self.win.set_swatch_colors(t, status)
 
 
 class NightLightPage(SchemaPage):
@@ -812,6 +909,120 @@ class NightLightPage(SchemaPage):
             text += " — " + err[0]
         self.status.set_label(text)
         self.status.set_visible(True)
+
+
+class EffectsPage(SchemaPage):
+    visible_when = {
+        "glass_refraction": lambda v: v["glass"],
+        "glass_thickness": lambda v: v["glass"],
+        "glass_opacity": lambda v: v["glass"],
+        "glass_blur": lambda v: v["glass"],
+        "glass_highlight": lambda v: v["glass"],
+        "glass_edge": lambda v: v["glass"],
+        "glass_chroma": lambda v: v["glass"],
+    }
+
+    def update_status(self, status):
+        c = status.get("compositor") or {}
+        if c.get("swayfx"):
+            text = "Running on SwayFX — changes apply right away."
+        else:
+            text = ("These need the SwayFX compositor: log out and pick “Sway (swayctl-fx)”. "
+                    "Settings are kept and apply there; plain sway ignores them.")
+        self.status.set_label(text)
+        self.status.set_visible(True)
+
+
+class AuthPage(SchemaPage):
+    """Fingerprint (fprintd) unlock: whether there's a reader, installing and
+    enrolling (in a terminal, they ask questions), and writing PAM on request
+    (pkexec) - never on its own."""
+
+    def __init__(self, win, section, title, keys):
+        super().__init__(win, section, title, keys)
+        self.state: dict[str, Any] = {}
+        self.visible_when = {}
+        for name in self.rows:
+            if name.startswith("fingerprint_"):
+                self.visible_when[name] = lambda v: bool(self.state.get("fingerprint", {}).get("hardware"))
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,
+                      margin_top=8, margin_bottom=8, margin_start=12, margin_end=12)
+        self.info = Gtk.Label(xalign=0, wrap=True)
+        buttons = Gtk.Box(spacing=8)
+        self.btn = {}
+        for key, label in (("install", _("Install…")), ("fingerprint", _("Add a fingerprint…")),
+                           ("apply", _("Apply")), ("restore", _("Undo all changes"))):
+            b = Gtk.Button(label=label)
+            b.connect("clicked", getattr(self, f"_{key}"))
+            self.btn[key] = b
+            buttons.append(b)
+        self.btn["apply"].add_css_class("suggested-action")
+        self.note = Gtk.Label(xalign=0, wrap=True, label=_(
+            "Your password always keeps working: the fingerprint is only tried before it."))
+        self.note.add_css_class("dim-label")
+        for w in (self.info, buttons, self.note):
+            box.append(w)
+        self.insert_child_after(_frame(box), self.status)
+
+    def update_status(self, status):
+        st = status.get("auth") or {}
+        self.state = st
+        finger = st.get("fingerprint", {})
+        lines = [_("Fingerprint: ") + (_("reader found") if finger.get("hardware") else _("no reader found"))
+                 + ("" if finger.get("installed") else _(" (fprintd not installed)"))]
+        if st.get("pending"):
+            lines.append(_("Changes not applied yet: press Apply (asks for your password)."))
+        self.info.set_label("\n".join(lines))
+        self.btn["install"].set_visible(not finger.get("installed"))
+        self.btn["fingerprint"].set_visible(bool(finger.get("hardware") and finger.get("installed")))
+        self.btn["apply"].set_sensitive(bool(st.get("pending")))
+        try:
+            self.update(self.win.client.get_all()[self.section])
+        except (DaemonUnavailable, CallError):
+            pass
+
+    def _run(self, script: str) -> None:
+        cmd = _terminal_command(script + '; echo; printf "Press Enter to close. "; read _')
+        if cmd is None:
+            self.win.show_error("Couldn't find a terminal to run this in.")
+            return
+        subprocess.Popen(cmd, start_new_session=True)
+
+    def _install(self, _b) -> None:
+        self._run("sudo pacman -S --needed fprintd")
+
+    def _fingerprint(self, _b) -> None:
+        self._run("fprintd-enroll")
+
+    def _pkexec(self, script: str, what: str) -> None:
+        from .pages.async_util import run_async
+
+        def go():
+            r = subprocess.run(["pkexec", "sh", "-c", script], capture_output=True, text=True)
+            return None if r.returncode == 0 else ("cancelled" if r.returncode == 126 else r.stderr.strip())
+
+        def done(err):
+            if err:
+                self.win.show_error(f"{what}: {err}")
+            else:
+                self.win.notify(what)
+            self.win.refresh_everything()
+            return GLib.SOURCE_REMOVE
+        run_async(go, done)
+
+    def _apply(self, _b) -> None:
+        from . import auth
+        try:
+            changes = auth.plan(self.win.client.get_all()["auth"])
+        except (ValueError, DaemonUnavailable, CallError) as e:
+            self.win.show_error(str(e))
+            return
+        if changes:
+            self._pkexec(auth.apply_script(changes), _("Unlock settings applied"))
+
+    def _restore(self, _b) -> None:
+        from . import auth
+        self._pkexec(auth.restore_script(), _("Unlock changes undone"))
 
 
 class LocationPage(SchemaPage):
@@ -853,7 +1064,7 @@ class ComponentPage(SchemaPage):
                     "config, or leave it to your setup in System \u203a Components.")
         elif not c["managed"]:
             text = (f"{self.program} is run by your own setup, so these settings don't apply. "
-                    "Let Sway Control Center run it in System \u203a Components.")
+                    "Let ChoCaiDat run it in System \u203a Components.")
         elif c["running"]:
             text = ""
         elif self.program in c.get("missing", []):
@@ -869,20 +1080,23 @@ class ComponentPage(SchemaPage):
 
 
 class BarPage(ComponentPage):
-    program = "waybar"
+    program = "swayctl-bar"
 
     def make_row(self, key):
         if key["name"] == "theme":
-            return ThemeRow(self, key, empty_label="Same as the desktop")
+            return ThemeRow(self, key, empty_label=_("Same as the desktop"))
         return super().make_row(key)
 
     def update_status(self, status):
         super().update_status(status)
-        self.rows["theme"].set_names([t["name"] for t in status["appearance"]["themes"]])
+        if "theme" in self.rows:
+            self.rows["theme"].set_names([t["name"] for t in status["appearance"]["themes"]])
 
 
 class NotificationsPage(ComponentPage):
-    program = "swaync"
+    """Shown by swayctl-bar itself: pop-ups at a corner, the list and
+    do-not-disturb in Quick Settings."""
+    program = "swayctl-bar"
 
 
 
@@ -1003,7 +1217,7 @@ class LauncherPage(ComponentPage):
         import shutil
         helper = shutil.which("paru") or shutil.which("yay")
         aur = [p for p in self.missing if p.startswith("elephant")]
-        steps = ['echo "Installing the Walker launcher for Sway Control Center"', "echo"]
+        steps = ['echo "Installing the Walker launcher for ChoCaiDat"', "echo"]
         if self.walker_missing:
             steps.append("sudo pacman -S --needed walker")
         if aur:
@@ -1069,7 +1283,9 @@ def _scroll_owned(win, device: str, status: dict[str, Any]) -> bool | None:
         smooth = win.client.get(f"scrolling.{device}_smooth")
     except (DaemonUnavailable, CallError):
         return None
-    return bool(smooth and status.get("scrolling", {}).get("running"))
+    sc = status.get("scrolling", {})
+    # the service, or swayctl-fx (direction/speed set from the Smooth scrolling rows)
+    return bool(smooth and (sc.get("running") or sc.get("compositor")))
 
 
 class DeviceScrollPiece(SchemaPage):
@@ -1090,10 +1306,13 @@ class SmoothScrollPiece(SchemaPage):
     def __init__(self, win, section, title, keys, groups, compact=True):
         super().__init__(win, section, title, keys, groups, compact)
         self.running = False
+        self.compositor = False
         self.visible_when = {}  # our own dict, not the class-level one every page shares
+        # only swayctl-fx smooths scrolling now: without it there's nothing to set here
         for name in self.rows:
-            if not name.endswith("_smooth"):
-                self.visible_when[name] = lambda v, n=name: v[f"{self.device}_smooth"] and self.running
+            self.visible_when[name] = (
+                (lambda v: self.compositor) if name.endswith("_smooth")
+                else (lambda v: v[f"{self.device}_smooth"] and self.compositor))
         if self.setup_card:
             self.setup = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,
                                  margin_top=8, margin_bottom=8, margin_start=12, margin_end=12)
@@ -1108,46 +1327,51 @@ class SmoothScrollPiece(SchemaPage):
             self.insert_child_after(self.setup_frame, self.status)
 
     def _set_up(self, _b) -> None:
+        # the only setup left: turning the old smooth scrolling service off
+        self._retire_service()
+
+    def _retire_service(self) -> None:
+        """Under swayctl-fx the system service isn't needed; while it runs it
+        still grabs the mouse and re-sends its wheel through a virtual device."""
         from .modules import scrolling
         from .pages.async_util import run_async
-        from .store import config_dir
         self.setup_btn.set_sensitive(False)
-        self.setup_btn.set_label("Waiting for your password…")
+
+        def go():
+            r = subprocess.run(["pkexec", "systemctl", "disable", "--now", scrolling.SERVICE],
+                               capture_output=True, text=True)
+            return None if r.returncode == 0 else ("cancelled" if r.returncode == 126 else r.stderr.strip())
 
         def done(err):
             self.setup_btn.set_sensitive(True)
-            self.setup_btn.set_label("Set up smooth scrolling…")
-            if isinstance(err, Exception) or err:
-                self.win.show_error(f"Smooth scrolling wasn't set up: {err}")
-            try:
-                self.win.client.apply_all()  # sway stops/starts scrolling the touchpad itself
-            except (DaemonUnavailable, CallError):
-                pass
+            if err:
+                self.win.show_error(f"Couldn't turn the service off: {err}")
             self.win.refresh_everything()
             return GLib.SOURCE_REMOVE
-        run_async(lambda: scrolling.install(config_dir()), done)
+        run_async(go, done)
 
     def update_status(self, status):
         sc = status.get("scrolling", {})
-        running = bool(sc.get("running"))
-        if running != self.running:
-            self.running = running
+        compositor = bool(sc.get("compositor"))
+        running = bool(sc.get("running")) or compositor
+        if (running, compositor) != (self.running, self.compositor):
+            self.running, self.compositor = running, compositor
             try:
                 self.update(self.win.client.get_all()[self.section])
             except (DaemonUnavailable, CallError):
                 pass
         if not self.setup_card:
             return
-        if sc.get("old_service") and not sc.get("installed"):
-            text = ("Your old touchpad-inertia service is doing the scrolling. Set up the built-in one to tune "
-                    "scrolling here (the current feel is kept). You'll be asked for your password once.")
-        elif not sc.get("installed"):
-            text = ("Smooth scrolling needs a small system service (it reads the touchpad and mouse). "
-                    "You'll be asked for your password once.")
-        elif not running:
-            text = "The smooth scrolling service isn't running. Setting it up again usually fixes that."
+        self.retire_old = bool(sc.get("service_active"))
+        self.setup_btn.set_label(_("Turn off the old service…"))
+        self.setup_btn.set_visible(self.retire_old)
+        if self.retire_old:
+            text = _("swayctl-fx smooths scrolling itself. The old smooth scrolling service is still running and "
+                     "holds the mouse (its wheel can stop working): turn it off. Asks for your password.")
+        elif not compositor:
+            text = _("Smooth scrolling needs the Sway (swayctl-fx) session: log out and pick it on the login screen.")
         else:
-            text = ""
+            text = ""  # smooth scrolling is swayctl-fx's job now; nothing to set up
         self.setup_text.set_label(text)
         self.setup_frame.set_visible(bool(text))
 
@@ -1188,7 +1412,7 @@ class PointingPage(Gtk.Box):
             piece(DeviceScrollPiece, "input.pointer", ptr, [("", ["natural_scroll", "scroll_factor"])], "mouse"),
             MouseSmooth(win, "scrolling", None, sc,
                         [("", ["mouse_smooth", "mouse_natural", "mouse_speed", "mouse_glide"]),
-                         ("~Fine-tune scrolling", ["mouse_smoothing", "mouse_ramp_floor"])]),
+                         ("~Fine-tune scrolling", ["mouse_smoothing"])]),
             piece(SchemaPage, "input.pointer", ptr, [("~More mouse options", ["middle_emulation"])]),
         ]
         for p in self.pieces:
@@ -1203,7 +1427,7 @@ def _as_part(widget: Gtk.Widget, heading: str) -> Gtk.Widget:
     first = widget.get_first_child()
     if isinstance(first, Gtk.Label) and first.has_css_class("title-2"):
         if heading:
-            first.set_label(heading)
+            first.set_label(_(heading))
             first.remove_css_class("title-2")
             first.add_css_class("title-3")
         else:
@@ -1224,8 +1448,8 @@ class CompositePage(Gtk.Box):
 
 
 COMPONENT_NAMES = {
-    "bar": ("Bar", "waybar"), "notifications": ("Notifications", "swaync"),
-    "idle": ("Lock & idle", "swayidle and swaylock"), "clipboard": ("Clipboard history", "cliphist"),
+    "bar": ("Bar", "swayctl-bar"), "notifications": ("Notifications", "swayctl-bar"),
+    "idle": ("Lock & idle", "swayidle and swayctl-lock"), "clipboard": ("Clipboard history", "cliphist"),
     "input_method": ("Typing other languages", "fcitx5"), "launcher": ("Launcher", "Walker"),
     "polkit_agent": ("Password prompt", "polkit-gnome, for tasks that need your password"),
 }
@@ -1294,7 +1518,7 @@ class ImageRow(Gtk.ListBoxRow):
         box = Gtk.Box(spacing=6)
         for w in (self.file_label, choose, self.clear):
             box.append(w)
-        self.set_child(_row(key["label"], box))
+        self.set_child(_row(key["label"], box, key.get("help")))
 
     def _choose(self, _button) -> None:
         dialog = Gtk.FileDialog(title="Choose a wallpaper")
@@ -1875,16 +2099,17 @@ class AutostartPage(ListPage):
 
 # --- window ----------------------------------------------------------------
 
-class SettingsWindow(Gtk.ApplicationWindow):
+class SettingsWindow(Adw.ApplicationWindow):
     def __init__(self, app: Gtk.Application, initial_page: str | None = None):
-        super().__init__(application=app, title="Sway Control Center")
+        super().__init__(application=app, title="ChoCaiDat")
         self.initial_page = initial_page
-        self.set_default_size(900, 640)
+        self.set_default_size(980, 680)
+        self.set_size_request(360, 400)
         self.client = Client()
         self.pages: dict[str, list[Page]] = {}
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.set_child(outer)
+        self.toasts = Adw.ToastOverlay(child=outer)
 
         # shown while the daemon isn't running
         self.offline = Gtk.Box(spacing=12, margin_top=8, margin_bottom=8, margin_start=12, margin_end=12)
@@ -1898,14 +2123,27 @@ class SettingsWindow(Gtk.ApplicationWindow):
         self.offline_revealer = Gtk.Revealer(child=self.offline)
         outer.append(self.offline_revealer)
 
-        split = Gtk.Box(vexpand=True)
-        outer.append(split)
+        # sidebar | page, collapsing into one column (with a back button) when narrow
+        self.split = Adw.NavigationSplitView(vexpand=True, min_sidebar_width=220, max_sidebar_width=280)
+        outer.append(self.split)
         # not homogeneous: one wide page mustn't widen every other page
         self.stack = Gtk.Stack(hexpand=True, hhomogeneous=False,
                                transition_type=Gtk.StackTransitionType.CROSSFADE)
-        split.append(self._build_sidebar())
-        split.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
-        split.append(self.stack)
+        # light/dark text per pane follows the window and what's in it
+        self.stack.connect("notify::visible-child", lambda *_: GLib.timeout_add(350, self._retag_backdrop))
+        for prop in ("notify::default-width", "notify::default-height", "notify::is-active", "notify::maximized"):
+            self.connect(prop, lambda *_: GLib.timeout_add(200, self._retag_backdrop))
+        side = Adw.ToolbarView(content=self._build_sidebar())
+        side.add_top_bar(Adw.HeaderBar(show_title=False))
+        self.split.set_sidebar(Adw.NavigationPage(child=side, title="ChoCaiDat", tag="sidebar"))
+        content = Adw.ToolbarView(content=self.stack)
+        self.content_header = Adw.HeaderBar()
+        content.add_top_bar(self.content_header)
+        self.content_page = Adw.NavigationPage(child=content, title="", tag="content")
+        self.split.set_content(self.content_page)
+        narrow = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 640sp"))
+        narrow.add_setter(self.split, "collapsed", True)
+        self.add_breakpoint(narrow)
 
         # Every page gets its place now; daemon pages are filled in once the
         # daemon's schema is available.
@@ -1940,6 +2178,7 @@ class SettingsWindow(Gtk.ApplicationWindow):
         err_box.add_css_class("error")
         self.error_revealer = Gtk.Revealer(child=err_box, transition_type=Gtk.RevealerTransitionType.SLIDE_UP)
         outer.append(self.error_revealer)
+        self.set_content(self.toasts)
 
         Gio.bus_watch_name(Gio.BusType.SESSION, BUS_NAME, Gio.BusNameWatcherFlags.NONE,
                            self._on_daemon_appeared, self._on_daemon_vanished)
@@ -1965,7 +2204,7 @@ class SettingsWindow(Gtk.ApplicationWindow):
     def _build_sidebar(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=8, margin_start=8, margin_end=8)
         box.set_size_request(220, -1)
-        self.search = Gtk.SearchEntry(placeholder_text="Search settings")
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search settings"))
         self.search.connect("search-changed", lambda _e: self.nav.invalidate_filter())
         box.append(self.search)
         self.nav = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
@@ -1974,7 +2213,8 @@ class SettingsWindow(Gtk.ApplicationWindow):
         self.keywords: dict[str, str] = {}
         for group, entries in NAV:
             head = Gtk.ListBoxRow(activatable=False, selectable=False)
-            label = Gtk.Label(label=group, xalign=0, margin_top=10, margin_start=6)
+            head.add_css_class("nav-header")
+            label = Gtk.Label(label=_(group), xalign=0, margin_top=10, margin_start=6)
             label.add_css_class("nav-group")
             head.set_child(label)
             head.is_header = True
@@ -1983,9 +2223,9 @@ class SettingsWindow(Gtk.ApplicationWindow):
                 row = Gtk.ListBoxRow()
                 line = Gtk.Box(spacing=10, margin_top=6, margin_bottom=6, margin_start=6)
                 line.append(Gtk.Image.new_from_icon_name(icon))
-                line.append(Gtk.Label(label=title, xalign=0))
+                line.append(Gtk.Label(label=_(title), xalign=0))
                 row.set_child(line)
-                row.page_id, row.title, row.is_header = page_id, title, False
+                row.page_id, row.title, row.is_header = page_id, _(title), False
                 self.nav.append(row)
                 self.nav_rows[page_id] = row
                 self.keywords[page_id] = f"{title} {PAGE_KEYWORDS.get(page_id, '')}".lower()
@@ -2006,6 +2246,8 @@ class SettingsWindow(Gtk.ApplicationWindow):
     def _nav_selected(self, _list, row) -> None:
         if row is not None and not row.is_header:
             self.stack.set_visible_child_name(row.page_id)
+            self.content_page.set_title(row.title)
+            self.split.set_show_content(True)  # collapsed: slide to the page
 
     def show_page(self, page_id: str | None) -> None:
         """Show a page by its id, or by the id of a section it contains."""
@@ -2014,6 +2256,7 @@ class SettingsWindow(Gtk.ApplicationWindow):
         if row is not None:
             self.nav.select_row(row)
             self.stack.set_visible_child_name(page_id)
+            self.content_page.set_title(row.title)
 
     def _set_daemon_pages_sensitive(self, on: bool) -> None:
         for page_id, slot in self.slots.items():
@@ -2045,12 +2288,17 @@ class SettingsWindow(Gtk.ApplicationWindow):
             return
         keys_by_section: dict[str, list] = {}
         for k in schema:
+            k["label"] = _(k["label"])  # the one place every setting's label passes
+            if k.get("help"):
+                k["help"] = _(k["help"])
             keys_by_section.setdefault(k["section"], []).append(k)
         page_classes: dict[str, Callable[..., Page]] = {
             "background": lambda w, s, t: BackgroundPage(w, s, t, keys_by_section[s]),
             "appearance": lambda w, s, t: AppearancePage(w, s, t, keys_by_section[s]),
             "night_light": lambda w, s, t: NightLightPage(w, s, t, keys_by_section[s]),
             "location": lambda w, s, t: LocationPage(w, s, t, keys_by_section[s]),
+            "effects": lambda w, s, t: EffectsPage(w, s, t, keys_by_section[s]),
+            "auth": lambda w, s, t: AuthPage(w, s, t, keys_by_section[s]),
             "bar": lambda w, s, t: BarPage(w, s, t, keys_by_section[s]),
             "notifications": lambda w, s, t: NotificationsPage(w, s, t, keys_by_section[s]),
             "idle": lambda w, s, t: IdlePage(w, s, t, keys_by_section[s]),
@@ -2098,7 +2346,7 @@ class SettingsWindow(Gtk.ApplicationWindow):
         for section in COMPONENT_NAMES:
             if section in keys_by_section:
                 toggles.append(register(ComponentToggle(self, section), section))
-        system.add_part("Components", "What Sway Control Center runs for you. Turn one off to keep your own "
+        system.add_part("Components", "What ChoCaiDat runs for you. Turn one off to keep your own "
                                       "setup for it.", _frame(toggles))
         autostart = register(AutostartPage(self, "autostart", "Startup apps", keys_by_section["autostart"]))
         system.add_part("Startup apps", "", _as_part(autostart, ""))
@@ -2137,14 +2385,90 @@ class SettingsWindow(Gtk.ApplicationWindow):
         except (DaemonUnavailable, CallError) as e:
             self.show_error(str(e))
 
-    def set_swatch_colors(self, theme: dict[str, Any]) -> None:
+    def set_swatch_colors(self, theme: dict[str, Any], status: dict[str, Any] | None = None) -> None:
         css = "".join(f".swatch-{r} {{ background: {theme[r]}; min-width: 28px; min-height: 20px; }}"
                       for r in ("bg", "fg", "accent", "muted"))
+        if "tokens" in theme:
+            # this window follows the active theme too, gtk.css option or not
+            from .theming import adwaita_css
+            css = adwaita_css(theme["tokens"]) + css + self._glass_css(theme, status)
+            Adw.StyleManager.get_default().set_color_scheme(
+                Adw.ColorScheme.FORCE_DARK if theme.get("dark") else Adw.ColorScheme.FORCE_LIGHT)
         if not hasattr(self, "_swatch_css"):
             self._swatch_css = Gtk.CssProvider()
             Gtk.StyleContext.add_provider_for_display(
                 Gdk.Display.get_default(), self._swatch_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self._swatch_css.load_from_string(css)
+
+    def _glass_css(self, theme: dict[str, Any], status: dict[str, Any] | None) -> str:
+        """Liquid glass like the bar's, when it's on and swayctl-fx can put
+        glass behind windows (it does: effects sends the for_window rule)."""
+        features = ((status or {}).get("compositor") or {}).get("features") or []
+        if "glass-windows" not in features:
+            self._backdrop = None
+            return ""
+        try:
+            fx = self.client.get_all()["effects"]
+        except (DaemonUnavailable, CallError, KeyError):
+            return ""
+        if not fx.get("glass"):
+            self._backdrop = None
+            return ""
+        from .modules.components import adaptive_css, app_glass_css, shell_milk
+        pct = fx.get("glass_opacity", 50)
+        try:
+            bg = self.client.get_all()["background"]
+        except (DaemonUnavailable, CallError, KeyError):
+            bg = {}
+        # what's behind the window, for light/dark text per pane (_retag_backdrop)
+        image = str(store_config_dir() / bg["image"]) if bg.get("image") else ""
+        from .modules.components import glass_tint
+        self._backdrop = (image, bg.get("mode", "fill"), bg.get("color") or theme.get("bg", "#000000"),
+                          glass_tint(pct, True), glass_tint(pct, False))
+        k = theme["tokens"]
+        # same milk + same per-pane adaptive text as the bar, Quick Settings,
+        # notifications and OSD (shell_milk / adaptive_css)
+        return app_glass_css(k, shell_milk(pct, True)) + adaptive_css(pct, k["accent"], k["accent_fg"])
+
+    def _retag_backdrop(self, *_args) -> bool:
+        """Tag each pane of glass on-light / on-dark by the wallpaper behind it
+        (tiled windows don't overlap: the wallpaper is what's behind)."""
+        info = getattr(self, "_backdrop", None)
+        if not info or not self.get_mapped():
+            return GLib.SOURCE_REMOVE
+        from . import backdrop
+        try:
+            ipc = swayipc.Connection()
+            found = backdrop.window_on_output(ipc.request(swayipc.GET_TREE), APP_ID, ipc.get_outputs())
+        except (swayipc.IPCError, OSError, KeyError):
+            return GLib.SOURCE_REMOVE
+        if not found:
+            return GLib.SOURCE_REMOVE
+        rect, out = found
+        image, mode, color, tint_dark, tint_light = info
+        g = backdrop.grid(image, mode, color, out["width"], out["height"])
+        ox, oy = rect["x"] - out["x"], rect["y"] - out["y"]
+        stack = [self]
+        while stack:
+            w = stack.pop()
+            if w is not self and _is_glass_pane(w):
+                ok, b = w.compute_bounds(self)
+                if ok:
+                    lum = backdrop.stats(g, out["width"], out["height"], ox + b.get_x(), oy + b.get_y(),
+                                         b.get_width(), b.get_height())
+                    dark, step = backdrop.choose(lum, tint_dark, tint_light)
+                    for c in w.get_css_classes():
+                        if c.startswith("tint-"):
+                            w.remove_css_class(c)
+                    w.remove_css_class("on-dark" if dark else "on-light")
+                    w.add_css_class("on-light" if dark else "on-dark")
+                    w.add_css_class(f"tint-{step}")
+                continue
+            child = w.get_first_child()
+            while child is not None:
+                stack.append(child)
+                child = child.get_next_sibling()
+        return GLib.SOURCE_REMOVE
 
     # actions used by pages
     def set(self, path: str, value: Any) -> bool:
@@ -2167,24 +2491,39 @@ class SettingsWindow(Gtk.ApplicationWindow):
         self.error_label.set_label(text)
         self.error_revealer.set_reveal_child(True)
 
+    def notify(self, text: str) -> None:
+        """A short confirmation that goes away by itself."""
+        self.toasts.add_toast(Adw.Toast(title=text, timeout=3))
 
-class SettingsApp(Gtk.Application):
+
+class SettingsApp(Adw.Application):
     def __init__(self, page: str | None = None):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
         self.page = page
 
     def do_startup(self):
-        Gtk.Application.do_startup(self)
+        Adw.Application.do_startup(self)
         provider = Gtk.CssProvider()
         provider.load_from_string(CSS)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        # Running from a checkout: the icon isn't installed into hicolor yet.
+        local_icons = Path(__file__).resolve().parent.parent / "data" / "icons"
+        if local_icons.is_dir():
+            Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(str(local_icons))
+        Gtk.Window.set_default_icon_name(APP_ID)
 
     def do_activate(self):
         win = self.get_active_window()
         first = win is None
         if first:
             win = SettingsWindow(self, self.page)
+            # theme and glass before the first frame, not after the first poll
+            try:
+                status = win.client.status()
+                win.set_swatch_colors(status["appearance"]["theme"], status)
+            except (DaemonUnavailable, CallError, KeyError):
+                pass
         elif self.page:
             win.show_page(self.page)
         win.present()

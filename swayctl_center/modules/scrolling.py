@@ -1,6 +1,8 @@
-"""Smooth scrolling. The work is done by swayctl-center's smoothscroll
-service (a root system service: it reads the input devices); this module
-writes its settings file, which the service reloads by itself.
+"""Smooth scrolling. Under swayctl-fx (feature "smooth-scroll") the
+compositor does it: this module sends `input ... smooth_scroll` commands and
+tells the service to stand down. Otherwise the work is done by swayctl-center's
+smoothscroll service (a root system service: it reads the input devices); this
+module writes its settings file, which the service reloads by itself.
 
 While smooth scrolling is on, sway must not scroll the touchpad as well (it
 would scroll twice) and must not re-apply direction or speed to the mouse's
@@ -15,6 +17,13 @@ from pathlib import Path
 from typing import Any
 
 from . import Context
+from .effects import fork_features
+
+# set from get_version on every apply: the compositor smooths scrolling itself
+_compositor: dict[str, Any] = {"smooth": False, "features": []}
+
+# our device -> sway input type
+SWAY_TYPES = {"touchpad": "touchpad", "mouse": "pointer"}
 
 SERVICE = "swayctl-center-smoothscroll.service"
 UNIT_PATH = Path("/etc/systemd/system") / SERVICE
@@ -53,13 +62,25 @@ def service_running() -> bool:
     return _active(SERVICE) or _active(OLD_SERVICE)
 
 
+def detect(ipc) -> dict[str, Any]:
+    """Learn whether the compositor smooths scrolling itself. Whoever applies
+    first calls it (input comes before scrolling in the schema)."""
+    version = ipc.get_version()
+    _compositor["features"] = fork_features(version)
+    _compositor["smooth"] = "smooth-scroll" in _compositor["features"]
+    return version
+
+
 def config_path(data_dir: Path) -> Path:
     return data_dir / "generated" / CONFIG_NAME
 
 
 def sway_scroll_owner(values: dict[str, dict[str, Any]], device: str) -> str:
-    """"smooth" when our service scrolls this device ("touchpad"/"mouse"), else "sway"."""
+    """"smooth" when our service scrolls this device ("touchpad"/"mouse"),
+    "compositor" when swayctl-fx smooths sway's own scrolling, else "sway"."""
     on = values.get("scrolling", {}).get(f"{device}_smooth", False)
+    if _compositor["smooth"]:
+        return "compositor" if on else "sway"
     return "smooth" if on and service_running() else "sway"
 
 
@@ -67,7 +88,22 @@ def service_config(v: dict[str, Any]) -> dict[str, dict[str, Any]]:
     cfg: dict[str, dict[str, Any]] = {"touchpad": {}, "mouse": {}}
     for key, (section, name) in KEYS.items():
         cfg[section][name] = v[key]
+    if _compositor["smooth"]:
+        for section in cfg.values():
+            section["enabled"] = False  # never smooth twice
     return cfg
+
+
+def compositor_commands(v: dict[str, Any]) -> list[str]:
+    cmds = []
+    for dev, kind in SWAY_TYPES.items():
+        on = "enabled" if v[f"{dev}_smooth"] else "disabled"
+        cmds += [f"input type:{kind} smooth_scroll {on}",
+                 f"input type:{kind} scroll_friction {v[f'{dev}_glide']:g}",
+                 f"input type:{kind} scroll_ramp {v[f'{dev}_ramp_ms']:g} {v[f'{dev}_ramp_power']:g}"]
+        if "smooth-scroll-tuning" in _compositor["features"]:
+            cmds.append(f"input type:{kind} scroll_smoothing {v[f'{dev}_smoothing']:g}")
+    return cmds
 
 
 def adopt_old_script() -> dict[str, Any]:
@@ -127,8 +163,11 @@ class ScrollingModule:
     tolerated_errors = ()
     depends_on: tuple[str, ...] = ()
 
+    def snapshot(self, ipc) -> dict[str, Any]:
+        return detect(ipc)
+
     def commands(self, section, v, changed, ctx=None) -> list[str]:
-        return []
+        return compositor_commands(v) if _compositor["smooth"] else []
 
     def apply_extra(self, section, v, changed, ctx: Context | None = None) -> list[str]:
         path = config_path(ctx.data_dir)
@@ -146,7 +185,8 @@ class ScrollingModule:
 
     def status(self) -> dict[str, Any]:
         return {"installed": UNIT_PATH.exists(), "running": service_running(),
-                "old_service": _active(OLD_SERVICE)}
+                "old_service": _active(OLD_SERVICE), "compositor": _compositor["smooth"],
+                "service_active": _active(SERVICE)}
 
     def import_current(self, ipc, config, ctx) -> dict[str, dict[str, Any]]:
         found = adopt_old_script()

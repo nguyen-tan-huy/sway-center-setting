@@ -40,13 +40,17 @@ class OutputsTest(unittest.TestCase):
         cfg[ID]["mode"] = "3072x1920@120Hz"
         self.assertEqual(self.cmds(cfg), [])
 
-    def test_command_when_different_or_disconnected(self):
+    def test_command_when_different_or_unknown(self):
         cfg = schema.lookup("outputs", "config").validate({ID: from_live(LIVE) | {"scale": 1.5}})
         self.assertEqual(self.cmds(cfg), [
             f'output "{ID}" enable mode 3072x1920@120.002Hz position 0 0 scale 1.5 '
             "transform normal adaptive_sync off"])
         other = schema.lookup("outputs", "config").validate({"Dell U2720Q ABC": {"enabled": False}})
-        self.assertEqual(self.cmds(other), ['output "Dell U2720Q ABC" disable'])
+        # live state unknown: send it so sway keeps it for when the monitor shows up
+        self.assertEqual(self.cmds(other, live=()), ['output "Dell U2720Q ABC" disable'])
+        # known to be unplugged: nothing (a command would make sway emit output events,
+        # which the daemon answers by re-applying - an endless loop)
+        self.assertEqual(self.cmds(other), [])
 
     def test_new_outputs(self):
         self.assertEqual(list(OutputsModule().new_outputs({}, [LIVE])), [ID])
@@ -73,13 +77,13 @@ class BackgroundTest(unittest.TestCase):
                 BackgroundModule().before_set("background", "image", str(d / "missing.png"), ctx)
 
     def test_solid_color_and_import(self):
-        v = {"image": "", "mode": "fill", "color": "#fbf1c7"}
+        v = {"image": "", "mode": "fill", "color": "#f5f5f7"}
         self.assertEqual(BackgroundModule().commands("background", v, None, Context(Path("/x"))),
-                         ["output * bg #fbf1c7 solid_color"])
+                         ["output * bg #f5f5f7 solid_color"])
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             (d / "w.jpg").write_bytes(b"x")
-            cfg = swayconfig.parse(f'set $bg #fbf1c7\noutput * bg "{d}/w.jpg" fill $bg', d)
+            cfg = swayconfig.parse(f'set $bg #f5f5f7\noutput * bg "{d}/w.jpg" fill $bg', d)
             got = BackgroundModule().import_current(None, cfg, Context(d / "app"))["background"]
         self.assertEqual(got["mode"], "fill")
         self.assertNotIn("color", got)  # came from a variable: keeps following the theme
@@ -91,9 +95,9 @@ class BackgroundTest(unittest.TestCase):
     def test_follows_theme_color(self):
         from swayctl_center import themes
         v = {"image": "", "mode": "fill", "color": ""}
-        ctx = Context(Path("/x"), theme=themes.BUILTIN["nord"])
+        ctx = Context(Path("/x"), theme=themes.BUILTIN["dark"])
         self.assertEqual(BackgroundModule().commands("background", v, None, ctx),
-                         ["output * bg #2e3440 solid_color"])
+                         ["output * bg #1c1c1e solid_color"])
 
 
 class FontTest(unittest.TestCase):

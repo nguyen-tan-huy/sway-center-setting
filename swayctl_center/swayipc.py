@@ -12,7 +12,9 @@ _HEADER = struct.Struct("<6sII")
 
 RUN_COMMAND = 0
 GET_OUTPUTS = 3
+GET_TREE = 4
 GET_BAR_CONFIG = 6
+GET_VERSION = 7
 SUBSCRIBE = 2
 GET_INPUTS = 100
 GET_CONFIG = 9
@@ -97,6 +99,9 @@ class Connection:
     def get_bar_config(self, bar_id: str = "") -> Any:
         """The ids of sway's own bars (`bar { }` blocks), or one bar's config."""
         return self.request(GET_BAR_CONFIG, bar_id)
+
+    def get_version(self) -> dict[str, Any]:
+        return self.request(GET_VERSION)
 
     def get_config(self) -> str:
         return self.request(GET_CONFIG).get("config", "")

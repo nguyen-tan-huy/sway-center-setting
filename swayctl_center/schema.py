@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import copy
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 SHARED = "shared"    # travels with export/import to another machine
@@ -35,6 +35,7 @@ class Key:
     item_fields: tuple[tuple[str, str], ...] = ()
     item_type: str | None = None  # "list" of plain values, e.g. "str"
     choices_hint: tuple[str, ...] = ()  # allowed list items, for UIs
+    help: str = ""  # one line under the label in the UI (filled from HELP below)
 
     @property
     def path(self) -> str:
@@ -62,7 +63,14 @@ class Key:
                 raise ValueError(f"{self.path}: expected one of {', '.join(self.choices)}, got {value!r}")
             return value
         if self.type == "int":
-            if isinstance(value, bool) or not isinstance(value, int):
+            # whole floats from JSON/CLI/sliders (48.0) are fine; 48.113 is not
+            if isinstance(value, bool):
+                raise ValueError(f"{self.path}: expected an integer, got {value!r}")
+            if isinstance(value, float):
+                if value != int(value):
+                    raise ValueError(f"{self.path}: expected an integer, got {value!r}")
+                value = int(value)
+            elif not isinstance(value, int):
                 raise ValueError(f"{self.path}: expected an integer, got {value!r}")
         elif self.type == "float":
             if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -93,6 +101,8 @@ class Key:
             out["item_type"] = self.item_type
         if self.hidden:
             out["hidden"] = True
+        if self.help:
+            out["help"] = self.help
         if self.choices_hint:
             out["choices_hint"] = list(self.choices_hint)
         return out
@@ -198,16 +208,41 @@ WAYBAR_MODULES = ("sway/workspaces", "sway/mode", "sway/window", "sway/scratchpa
 
 _MODULE_RE = re.compile(r"[a-z][\w-]*(/[\w.-]+)?(#[\w.-]+)?")
 
+# swayctl-bar's modules; "status" is the one Quick Settings button
+BAR_MODULES = ("workspaces", "mode", "window", "clock", "tray", "status")
+# waybar module -> swayctl-bar module, for settings saved before (anything
+# status-like becomes the Quick Settings button; others have no equivalent)
+LEGACY_BAR_MODULES = {"sway/workspaces": "workspaces", "sway/mode": "mode", "sway/window": "window"}
+LEGACY_STATUS_MODULES = {"pulseaudio", "wireplumber", "network", "battery", "bluetooth", "backlight",
+                         "power-profiles-daemon", "idle_inhibitor", "custom/notifications", "cpu", "memory"}
+
+
+def bar_module(name: str) -> str | None:
+    """A module name as swayctl-bar knows it (old waybar names converted), or None."""
+    base = name.split("#")[0]
+    if base in BAR_MODULES:
+        return base
+    if base in LEGACY_BAR_MODULES:
+        return LEGACY_BAR_MODULES[base]
+    if base in LEGACY_STATUS_MODULES:
+        return "status"
+    return None
+
+
+def strftime_format(fmt: str) -> str:
+    """waybar's "{:%H:%M}" -> "%H:%M"; strftime formats stay as they are."""
+    return re.sub(r"\{:([^}]*)\}", r"\1", fmt)
+
 
 def validate_bar_modules(value: list) -> list:
-    """Module ids as waybar writes them: clock, sway/workspaces, custom/media,
-    battery#bat2... (the catalog above is only a suggestion list)."""
+    """swayctl-bar modules, in order, each once. Old waybar names are converted
+    (so settings saved before still load); ones it has no equivalent for drop."""
     out = []
     for m in value:
-        _require(isinstance(m, str) and _MODULE_RE.fullmatch(m) is not None,
-                 f"bar: {m!r} is not a waybar module name (e.g. clock, sway/workspaces, custom/name)")
-        if m not in out:
-            out.append(m)
+        _require(isinstance(m, str), f"bar: {m!r} is not a module name")
+        native = bar_module(m)
+        if native and native not in out:
+            out.append(native)
     return out
 
 
@@ -312,7 +347,7 @@ KEYS: tuple[Key, ...] = (
     Key("scrolling", "mouse_speed", "float", 0.45, "Scroll speed", min=0.05, max=4.0),
     Key("scrolling", "mouse_glide", "float", 0.98, "Glide", min=0.90, max=0.995),
     Key("scrolling", "mouse_smoothing", "float", 0.99, "Smoothness", min=0.05, max=1.0),
-    Key("scrolling", "mouse_ramp_floor", "float", 0.45, "First notch strength", min=0.0, max=1.0),
+    Key("scrolling", "mouse_ramp_floor", "float", 0.45, "First notch strength", min=0.0, max=1.0, hidden=True),
     Key("scrolling", "mouse_ramp_ms", "float", 290.0, "Ease-in time (ms)", min=0.0, max=1000.0, hidden=True),
     Key("scrolling", "mouse_ramp_power", "float", 0.8, "Ease-in curve", min=0.3, max=4.0, hidden=True),
     Key("scrolling", "mouse_min_velocity", "float", 4.5, "Stop threshold", min=0.5, max=50.0, hidden=True),
@@ -336,12 +371,46 @@ KEYS: tuple[Key, ...] = (
                      ("scale", "float"), ("transform", "enum"), ("adaptive_sync", "bool"))),
 
     # color theme and when it switches between its light and dark variant
+    # SwayFX (swayctl-fx) only; kept and applied whenever that compositor runs
+    Key("effects", "corner_radius", "int", 0, "Rounded window corners", min=0, max=40),
+    Key("effects", "shadows", "bool", False, "Window shadows", hidden=True),
+    Key("effects", "shadow_blur_radius", "int", 20, "Shadow softness", min=0, max=99, hidden=True),
+    Key("effects", "blur", "bool", False, "Blur behind see-through windows", hidden=True),
+    Key("effects", "blur_passes", "int", 2, "Blur strength", min=0, max=10, hidden=True),
+    Key("effects", "blur_radius", "int", 5, "Blur spread", min=0, max=10, hidden=True),
+    Key("effects", "dim_inactive", "float", 0.0, "Dim unfocused windows", min=0.0, max=1.0),
+    Key("effects", "panels", "bool", False, "Blur and shadow under the bar, notifications and launcher", hidden=True),
+    Key("effects", "glass", "bool", False, "Liquid glass bar, popups and this app"),
+    # the liquid-glass knobs (see winaviation liquid-glass-demo): thickness is the
+    # kube.io / winaviation liquid-glass-demo capsule ("Precision Lens"):
+    # bezel = Bezel Width, thickness = Glass Thickness, refraction = Refraction
+    # Scale, highlight = Specular Opacity (bright rim), chroma = colour split.
+    # Windows, bar, Quick Settings and OSD all follow these.
+    Key("effects", "glass_refraction", "int", 50, "Glass refraction", min=0, max=140),
+    Key("effects", "glass_opacity", "int", 10, "Glass tint (%)", min=0, max=90),
+    Key("effects", "glass_blur", "int", 0, "Glass frost (%)", min=0, max=100),
+    Key("effects", "glass_highlight", "float", 0.90, "Glass specular", min=0.0, max=1.0),
+    Key("effects", "glass_edge", "int", 20, "Glass bezel (px, 0 = auto)", min=0, max=140),
+    Key("effects", "glass_thickness", "int", 90, "Glass thickness (px)", min=0, max=1500),
+    Key("effects", "glass_chroma", "float", 0.35, "Glass dispersion", min=0.0, max=1.0),
+    Key("effects", "animations", "bool", False, "Window animations", hidden=True),
+    # fingerprint (fprintd) unlock; written to PAM only when applied from the app
+    Key("auth", "fingerprint_lock", "bool", False, "Fingerprint: unlock the screen"),
+    Key("auth", "fingerprint_sudo", "bool", False, "Fingerprint: sudo"),
+    Key("auth", "fingerprint_polkit", "bool", False, "Fingerprint: admin prompts"),
+    Key("auth", "fingerprint_login", "bool", False, "Fingerprint: log in"),
+    Key("auth", "lock_screen", "enum", "swayctl-lock", "Lock screen", choices=("swaylock", "swayctl-lock"),
+        hidden=True),
     Key("appearance", "mode", "enum", "auto", "Appearance", choices=("light", "dark", "auto")),
-    Key("appearance", "light_theme", "str", "gruvbox-light", "Light theme", pattern=r"[\w.-]+"),
-    Key("appearance", "dark_theme", "str", "gruvbox-dark", "Dark theme", pattern=r"[\w.-]+"),
+    # only "light" and "dark" now; kept (hidden) for themes files people made
+    Key("appearance", "light_theme", "str", "light", "Light theme", pattern=r"[\w.-]+", hidden=True),
+    Key("appearance", "dark_theme", "str", "dark", "Dark theme", pattern=r"[\w.-]+", hidden=True),
     Key("appearance", "schedule", "enum", "sun", "Switch automatically", choices=("sun", "custom")),
     Key("appearance", "light_at", "str", "07:00", "Light from", pattern=HHMM_RE),
     Key("appearance", "dark_at", "str", "19:00", "Dark from", pattern=HHMM_RE),
+    Key("appearance", "style", "enum", "modern", "Style", choices=("classic", "modern"), hidden=True),
+    Key("appearance", "gtk_css", "bool", False, "Theme colors in GTK 4 apps"),
+    Key("appearance", "apps_follow", "bool", True, "Terminals, GTK 3 and Qt apps follow light/dark"),
 
     # where "sunrise/sunset" is computed for; by default guessed from the timezone
     Key("location", "source", "enum", "timezone", "Location", choices=("timezone", "manual"), scope=MACHINE),
@@ -378,49 +447,54 @@ KEYS: tuple[Key, ...] = (
     # shell components. "managed": swayctl-center runs it (with its own config,
     # themed); otherwise it's left to the user's own setup.
     Key("bar", "managed", "bool", True, "Managed by swayctl-center"),
+    Key("bar", "program", "enum", "swayctl-bar", "Bar program", choices=("waybar", "swayctl-bar"), hidden=True),
     Key("bar", "position", "enum", "top", "Position", choices=("top", "bottom", "left", "right")),
-    Key("bar", "layer", "enum", "top", "Layer", choices=("top", "bottom", "overlay")),
+    Key("bar", "layer", "enum", "top", "Layer", choices=("top", "bottom", "overlay"), hidden=True),
     Key("bar", "height", "int", 30, "Height (0 = fit contents)", min=0, max=200),
-    Key("bar", "spacing", "int", 4, "Space between modules", min=0, max=64),
-    Key("bar", "margin_top", "int", 0, "Margin top", min=0, max=200),
-    Key("bar", "margin_right", "int", 0, "Margin right", min=0, max=200),
-    Key("bar", "margin_bottom", "int", 0, "Margin bottom", min=0, max=200),
-    Key("bar", "margin_left", "int", 0, "Margin left", min=0, max=200),
-    Key("bar", "exclusive", "bool", True, "Keep windows from covering the bar"),
-    Key("bar", "modules_left", "list", ["sway/workspaces", "sway/mode"], "Left",
-        validator=validate_bar_modules, item_type="str", choices_hint=WAYBAR_MODULES),
+    Key("bar", "spacing", "int", 4, "Space between modules", min=0, max=64, hidden=True),
+    Key("bar", "margin_top", "int", 0, "Margin top", min=0, max=200, hidden=True),
+    Key("bar", "margin_right", "int", 0, "Margin right", min=0, max=200, hidden=True),
+    Key("bar", "margin_bottom", "int", 0, "Margin bottom", min=0, max=200, hidden=True),
+    Key("bar", "margin_left", "int", 0, "Margin left", min=0, max=200, hidden=True),
+    Key("bar", "exclusive", "bool", True, "Keep windows from covering the bar", hidden=True),
+    Key("bar", "modules_left", "list", ["workspaces", "mode"], "Left",
+        validator=validate_bar_modules, item_type="str", choices_hint=BAR_MODULES),
     Key("bar", "modules_center", "list", ["clock"], "Center",
-        validator=validate_bar_modules, item_type="str", choices_hint=WAYBAR_MODULES),
-    Key("bar", "modules_right", "list",
-        ["idle_inhibitor", "pulseaudio", "network", "battery", "custom/notifications", "tray"],
-        "Right", validator=validate_bar_modules, item_type="str", choices_hint=WAYBAR_MODULES),
-    Key("bar", "clock_format", "str", "{:%H:%M}", "Clock format", pattern=r".*\S.*"),
-    Key("bar", "clock_format_alt", "str", "{:%a %d %b  %H:%M}", "Clock format when clicked", pattern=r".*\S.*"),
-    Key("bar", "theme", "str", "", "Bar colors", pattern=r"[\w.-]*"),
+        validator=validate_bar_modules, item_type="str", choices_hint=BAR_MODULES),
+    Key("bar", "modules_right", "list", ["tray", "status"],
+        "Right", validator=validate_bar_modules, item_type="str", choices_hint=BAR_MODULES),
+    Key("bar", "clock_format", "str", "%H:%M", "Clock format", pattern=r".*\S.*"),
+    Key("bar", "clock_format_alt", "str", "%a %d %b  %H:%M", "Clock tooltip format", pattern=r".*\S.*", hidden=True),
+    Key("bar", "theme", "str", "", "Bar colors", pattern=r"[\w.-]*", hidden=True),
     # your own waybar config as the base (module definitions, custom modules);
     # the settings above are applied on top of it
     Key("bar", "config_file", "str", "", "Base config", hidden=True),
     Key("bar", "style_template", "str", "", "Style template", hidden=True),
 
     Key("notifications", "managed", "bool", True, "Managed by swayctl-center"),
+    # swayctl-bar shows notifications itself; swaync only for the old setup
+    Key("notifications", "program", "enum", "swayctl-bar", "Notification program",
+        choices=("swayctl-bar", "swaync"), hidden=True),
+    Key("notifications", "max_visible", "int", 4, "Pop-ups on screen at once", min=1, max=10),
     Key("notifications", "dnd_on_start", "bool", False, "Do not disturb when logging in"),
     Key("notifications", "position_x", "enum", "right", "Horizontal position", choices=("left", "center", "right")),
     Key("notifications", "position_y", "enum", "top", "Vertical position", choices=("top", "center", "bottom")),
-    Key("notifications", "layer", "enum", "overlay", "Pop-ups show above", choices=("overlay", "top")),
+    Key("notifications", "output", "str", "", "Show on monitor", pattern=r"[\w.-]*"),
+    Key("notifications", "layer", "enum", "overlay", "Pop-ups show above", choices=("overlay", "top"), hidden=True),
     Key("notifications", "width", "int", 400, "Pop-up width", min=200, max=1200),
-    Key("notifications", "control_center_width", "int", 500, "Notification center width", min=200, max=1600),
-    Key("notifications", "control_center_height", "int", 600, "Notification center height", min=200, max=2000),
-    Key("notifications", "fit_to_screen", "bool", True, "Notification center fills the screen height"),
+    Key("notifications", "control_center_width", "int", 500, "Notification center width", min=200, max=1600, hidden=True),
+    Key("notifications", "control_center_height", "int", 600, "Notification center height", min=200, max=2000, hidden=True),
+    Key("notifications", "fit_to_screen", "bool", True, "Notification center fills the screen height", hidden=True),
     Key("notifications", "timeout", "int", 8, "Hide after (seconds)", min=1, max=120),
     Key("notifications", "timeout_low", "int", 4, "Hide low-priority after (seconds)", min=1, max=120),
     Key("notifications", "timeout_critical", "int", 0, "Hide critical after (seconds, 0 = never)", min=0, max=600),
-    Key("notifications", "grouping", "bool", True, "Group notifications by app"),
-    Key("notifications", "relative_timestamps", "bool", True, "Relative times (5 min ago)"),
+    Key("notifications", "grouping", "bool", True, "Group notifications by app", hidden=True),
+    Key("notifications", "relative_timestamps", "bool", True, "Relative times (5 min ago)", hidden=True),
     Key("notifications", "image_visibility", "enum", "when-available", "Show images",
-        choices=("always", "when-available", "never")),
-    Key("notifications", "hide_on_clear", "bool", False, "Close the center after Clear all"),
-    Key("notifications", "hide_on_action", "bool", True, "Close the center after an action"),
-    Key("notifications", "keyboard_shortcuts", "bool", True, "Keyboard shortcuts in the center"),
+        choices=("always", "when-available", "never"), hidden=True),
+    Key("notifications", "hide_on_clear", "bool", False, "Close the center after Clear all", hidden=True),
+    Key("notifications", "hide_on_action", "bool", True, "Close the center after an action", hidden=True),
+    Key("notifications", "keyboard_shortcuts", "bool", True, "Keyboard shortcuts in the center", hidden=True),
     Key("notifications", "config_file", "str", "", "Base config", hidden=True),
     Key("notifications", "style_template", "str", "", "Style template", hidden=True),
 
@@ -429,9 +503,9 @@ KEYS: tuple[Key, ...] = (
     Key("idle", "screen_off_after", "int", 600, "Turn screen off after (seconds, 0 = never)", min=0, max=14400),
     Key("idle", "suspend_after", "int", 0, "Suspend after (seconds, 0 = never)", min=0, max=86400),
     Key("idle", "lock_before_sleep", "bool", True, "Lock before suspend"),
-    Key("idle", "lock_background", "enum", "color", "Lock screen background", choices=("color", "wallpaper")),
-    Key("idle", "show_failed_attempts", "bool", False, "Show failed attempts"),
-    Key("idle", "ignore_empty_password", "bool", False, "Ignore Enter with an empty password"),
+    Key("idle", "lock_background", "enum", "color", "Lock screen background", choices=("color", "wallpaper"), hidden=True),
+    Key("idle", "show_failed_attempts", "bool", False, "Show failed attempts", hidden=True),
+    Key("idle", "ignore_empty_password", "bool", False, "Ignore Enter with an empty password", hidden=True),
 
     Key("clipboard", "managed", "bool", True, "Managed by swayctl-center"),
     Key("clipboard", "max_items", "int", 750, "History size", min=10, max=100000),
@@ -449,6 +523,8 @@ KEYS: tuple[Key, ...] = (
 
     # app launcher (Walker + elephant; fuzzel is the fallback when they're missing)
     Key("launcher", "managed", "bool", True, "Managed by swayctl-center"),
+    # swayctl-bar's Spotlight (needs the bar to be swayctl-bar) or Walker
+    Key("launcher", "program", "enum", "swayctl-bar", "Launcher", choices=("swayctl-bar", "walker")),
     Key("launcher", "apps", "bool", True, "Apps"),
     Key("launcher", "settings", "bool", True, "Settings and quick actions"),
     Key("launcher", "calc", "bool", True, "Calculator (type = first)"),
@@ -473,6 +549,68 @@ KEYS: tuple[Key, ...] = (
     Key("autostart", "commands", "list", [], "Startup applications", validator=validate_autostart,
         item_fields=(("command", "str"), ("enabled", "bool"))),
 )
+
+# One-line explanations shown under each setting (translated in i18n.py).
+HELP: dict[str, str] = {
+    "layout.border": "Thickness of the line around windows, in pixels.",
+    "layout.gaps_inner": "Space between windows, in pixels.",
+    "layout.gaps_outer": "Extra space between windows and the screen edges.",
+    "layout.smart_gaps": "Drop the gaps when a workspace has a single window.",
+    "appearance.apps_follow": "foot, kitty and alacritty colors, the GTK 3 theme (browsers and Electron go by it) "
+                              "and Qt apps switch with the desktop.",
+    "layout.focus_follows_mouse": "Focus the window under the pointer without clicking.",
+    "effects.corner_radius": "Round the corners of every window by this many pixels (0 = square).",
+    "effects.shadows": "A soft shadow under windows.",
+    "effects.shadow_blur_radius": "How far the shadow spreads; higher is softer.",
+    "effects.blur": "Blur what's behind windows that are partly see-through (terminals...).",
+    "effects.blur_passes": "How many times the blur is applied; more is smoother and heavier.",
+    "effects.blur_radius": "How far each blur pass reaches.",
+    "effects.dim_inactive": "Darken windows you aren't using (0 = off, 1 = black).",
+    "effects.panels": "Blur and shadow behind the bar, notifications and launcher.",
+    "effects.glass": "The bar, Quick Settings, notifications, launcher and this window become liquid glass: what's behind bends at the edges.",
+    "effects.glass_refraction": "How hard the bezel bends what's behind it, in pixels (demo Refraction Scale). The flat centre stays clear; only the rim pulls and magnifies.",
+    "effects.glass_opacity": "How much of the theme's color tints the glass (0 = clear; dark mode is always smoked glass). When glass is on, the shell's milk fill is thinned so the bend shows through.",
+    "effects.glass_blur": "How frosted the glass is (0 = crystal clear, 100 = frosted). The demo precision lens is clear (default 0).",
+    "effects.glass_highlight": "Brightness of the thin specular band on the glass edge (0 = none, 1 = full shine). Demo capsule rim is bright (default 0.90).",
+    "effects.glass_edge": "Width of the glass bezel in pixels (demo Bezel Width; 0 = follow the corner radius).",
+    "effects.glass_thickness": "Glass optical depth in pixels (demo Glass Thickness): how far light travels through the rim, so a thicker pane bends colours harder at the edge.",
+    "effects.glass_chroma": "Colour split at the rim (red bends less, blue more) — high-contrast edges behind the glass fringe into colour (0 = none).",
+    "effects.animations": "Animate windows opening, closing and moving.",
+    "scrolling.touchpad_smooth": "Scroll smoothly and keep gliding after your fingers lift.",
+    "scrolling.touchpad_natural": "Content follows your fingers, like a phone.",
+    "scrolling.touchpad_speed": "How far a swipe scrolls.",
+    "scrolling.touchpad_glide": "How long it keeps gliding after you lift your fingers.",
+    "scrolling.touchpad_ramp_ms": "Time to reach full speed at the start of a swipe; avoids jumps.",
+    "scrolling.touchpad_smoothing": "Lower is smoother but lags a little behind your fingers.",
+    "scrolling.mouse_smooth": "Turn each wheel notch into a short glide instead of a jump.",
+    "scrolling.mouse_natural": "Reverse the wheel direction.",
+    "scrolling.mouse_speed": "How far one wheel notch scrolls.",
+    "scrolling.mouse_glide": "How long each notch keeps gliding.",
+    "scrolling.mouse_smoothing": "Lower is smoother but less direct.",
+    "appearance.mode": "Light, dark, or switch on a schedule.",
+    "appearance.schedule": "When automatic: follow sunrise and sunset, or your own times.",
+    "appearance.gtk_css": "Also color GTK 4 / libadwaita apps with the theme (edits your gtk.css).",
+    "bar.position": "Screen edge the bar sits on.",
+    "bar.height": "Bar height in pixels (0 = as tall as its contents).",
+    "bar.exclusive": "Windows stop at the bar instead of going under it.",
+    "bar.modules_left": "What each side of the bar shows, in order.",
+    "bar.clock_format_alt": "Shown when the pointer rests on the clock.",
+    "bar.clock_format": "strftime codes, e.g. %H:%M for 14:05 or %a %d %b for Sat 03 Oct.",
+    "bar.theme": "Use a different theme for the bar only (empty = same as the desktop).",
+    "auth.fingerprint_lock": "Unlock the screen with a finger as well as the password.",
+    "auth.fingerprint_sudo": "Confirm sudo in a terminal with a finger.",
+    "auth.fingerprint_polkit": "Confirm admin prompts with a finger.",
+    "auth.fingerprint_login": "Log in from the login screen with a finger.",
+    "idle.lock_after": "Lock after this long without input.",
+    "idle.screen_off_after": "Turn the screen off after this long without input.",
+    "idle.suspend_after": "Put the computer to sleep after this long without input.",
+    "idle.lock_before_sleep": "Always lock before the computer sleeps.",
+    "notifications.dnd_on_start": "Start each session with Do Not Disturb on.",
+    "notifications.timeout": "Seconds a normal notification stays on screen.",
+    "notifications.grouping": "Stack notifications from the same app together.",
+}
+
+KEYS = tuple(replace(k, help=HELP.get(k.path, "")) for k in KEYS)
 
 BY_PATH: dict[str, Key] = {k.path: k for k in KEYS}
 SECTIONS: tuple[str, ...] = tuple(dict.fromkeys(k.section for k in KEYS))

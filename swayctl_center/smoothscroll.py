@@ -389,9 +389,21 @@ def touchpad_worker(smoother, stop_flag, all_smoothers):
     cum_dx_mm = 0.0  # cumulative pan movement (mm) since the current gesture started, used to pick axis_lock
     cum_dy_mm = 0.0
 
+    button_down = False  # clickpad physically pressed: a drag/selection, never a scroll
+
     for event in dev.read_loop():
         if stop_flag.is_set():
             return
+        if event.type == ecodes.EV_KEY and event.code in (ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.BTN_MIDDLE):
+            button_down = event.value != 0
+            # Two fingers while the pad is held down (thumb clicks, finger drags) is a
+            # drag-select: scrolling under it, or coasting after lift-off, would keep
+            # extending the selection on its own.
+            smoother.touch_end()
+            stop_all_inertia(all_smoothers)  # after touch_end: cancel_inertia skips a held gesture
+            last_avg = None
+            last_sep_mm = None
+            continue
         if event.type == ecodes.EV_ABS:
             if event.code == ecodes.ABS_MT_SLOT:
                 cur_slot = event.value
@@ -422,7 +434,7 @@ def touchpad_worker(smoother, stop_flag, all_smoothers):
             elif event.code == ecodes.ABS_MT_POSITION_Y:
                 slots.setdefault(cur_slot, {})["y"] = event.value
         elif event.type == ecodes.EV_SYN and event.code == ecodes.SYN_REPORT:
-            if len(active_fingers) == 2:
+            if len(active_fingers) == 2 and not button_down:
                 pts = [
                     slots[s]
                     for s in active_fingers
@@ -558,6 +570,11 @@ def mouse_worker(smoother, stop_flag, all_smoothers):
                 clone.syn()
                 continue
             clone.write(event.type, event.code, event.value)
+            if event.type == ecodes.EV_KEY:
+                # Flush buttons right away: a release left waiting for the source's next
+                # SYN_REPORT reached apps only with the next motion or press (~100ms+ late),
+                # breaking double-click timing and drag-select.
+                clone.syn()
     finally:
         try:
             dev.ungrab()

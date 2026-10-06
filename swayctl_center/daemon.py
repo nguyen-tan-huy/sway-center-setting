@@ -76,7 +76,7 @@ OUTPUT_SETTLE_MS = 500
 SCHEDULE_CHECK_S = 30
 NIGHT_LIGHT_STEP = 250
 ACTIONS = ("theme.toggle", "night_light.toggle", "night_light.warmer", "night_light.cooler",
-           "lock", "notifications.panel", "notifications.dnd")
+           "lock", "notifications.panel", "notifications.dnd", "preset.modern", "preset.classic")
 # sections that existed before first-start import tracked sections one by one;
 # a store created back then already reflects the user's setup for these
 # keys added to sections that already existed; a store made before them adopts
@@ -95,6 +95,8 @@ KEYS_ADDED_LATER = {
     "idle": ("suspend_after", "lock_background", "show_failed_attempts", "ignore_empty_password"),
     "clipboard": ("persist",),
 }
+# hidden settings whose old values (waybar, classic, swaylock) are dropped
+RETIRED_CHOICES = (("bar", "program"), ("appearance", "style"), ("auth", "lock_screen"))
 LEGACY_SECTIONS = ("layout", "input.touchpad", "input.pointer", "outputs", "appearance", "location",
                    "night_light", "background", "font", "keybindings", "autostart")
 
@@ -134,8 +136,31 @@ class Daemon:
 
     # --- lifecycle -------------------------------------------------------
 
+    def _retire_old_choices(self) -> None:
+        """The app only offers the new stack now (swayctl-bar, the modern look,
+        swayctl-lock): forget choices of the old one so the new defaults apply."""
+        for section, name in RETIRED_CHOICES:
+            if self.store.is_set(section, name):
+                log.info("now using the new default for %s.%s", section, name)
+                self.store.reset(section, name)
+        # waybar-style values: module lists convert on load (schema); clock
+        # formats lose waybar's "{:...}" wrapper
+        stored = self.store.scope_values(schema.lookup("bar", "clock_format").scope).get("bar", {})
+        for name in ("clock_format", "clock_format_alt"):
+            if name in stored and stored[name] != schema.strftime_format(stored[name]):
+                self.store.set("bar", name, schema.strftime_format(stored[name]))
+        # one Quick Settings button: several waybar modules on both sides all
+        # became it; keep the last side's
+        bar = self.store.effective()["bar"]
+        sides = ["modules_left", "modules_center", "modules_right"]
+        for i, side in enumerate(sides):
+            if "status" in bar[side] and any("status" in bar[s] for s in sides[i + 1:]):
+                self.store.set("bar", side, [m for m in bar[side] if m != "status"])
+                bar[side] = [m for m in bar[side] if m != "status"]
+
     def run(self) -> None:
         self.store.load()
+        self._retire_old_choices()
         if not self.store.exists:
             self._adopt_current_setup(schema.SECTIONS)
         else:
@@ -292,6 +317,8 @@ class Daemon:
         if self._resolve_theme(values):
             triggers.add("theme")
             log.info("active theme is now %s (%s)", self.resolved.theme.name, self.resolved.source)
+        if "style" in changes.get("appearance", ()):
+            triggers.add("theme")  # everything themed is also styled
         for section in values:  # schema order: e.g. appearance before background
             if section in changes:
                 self.apply_section(section, values[section], changes[section],
@@ -336,7 +363,10 @@ class Daemon:
             flag = "-t" if name == "notifications.panel" else "-d"
             self._run([f"exec swaync-client {flag} -sw"])
             return
-        if name == "theme.toggle":
+        if name.startswith("preset."):
+            from . import presets
+            self.store.set_many(presets.values(name.removeprefix("preset.")))
+        elif name == "theme.toggle":
             r = self.resolved
             opposite = "light" if r.variant == "dark" else "dark"
             if values["appearance"]["mode"] != "auto":
@@ -383,10 +413,21 @@ class Daemon:
             "night_light": NightLightModule().status(),
             "scrolling": self.modules["scrolling"].status(),
             "keyremap": self.modules["keyremap"].status(),
+            "auth": self.modules["auth"].status(values["auth"]),
             "components": {s: m.status(values[s], self._ctx(values=values))
                            for s, m in self.modules.items() if hasattr(m, "stop_all")},
             "errors": {s: e for s, e in self.errors.items() if e},
+            "compositor": self._compositor(),
         }
+
+    def _compositor(self) -> dict[str, Any]:
+        from .modules.effects import fork_features, is_swayfx
+        try:
+            v = self.ipc.get_version()
+        except (OSError, swayipc.IPCError):
+            v = None
+        return {"swayfx": is_swayfx(v), "features": fork_features(v),
+                "version": (v or {}).get("human_readable", "")}
 
     # --- watchers --------------------------------------------------------
 

@@ -45,7 +45,7 @@ class AdoptTest(unittest.TestCase):
             owned.adopt("~/nope.jsonc", self.data, "bar", "base.jsonc")
 
     def test_bar_before_set_owns_the_file(self):
-        c = Context(self.data, values=schema.defaults(), theme=themes.BUILTIN["nord"])
+        c = Context(self.data, values=schema.defaults(), theme=themes.BUILTIN["dark"])
         value = BarModule().before_set("bar", "config_file", "~/.config/waybar/config.jsonc", c)
         self.assertTrue(value.startswith(str(self.data)))
         related = BarModule().related_values("bar", "config_file", value, c)
@@ -55,7 +55,7 @@ class AdoptTest(unittest.TestCase):
         (self.home / "k.template").write_text("bg #@BG@\n")
         (self.home / "other").mkdir()
         (self.home / "other/k.template").write_text("fg #@FG@\n")
-        c = Context(self.data, values=schema.defaults(), theme=themes.BUILTIN["nord"])
+        c = Context(self.data, values=schema.defaults(), theme=themes.BUILTIN["dark"])
         items = ThemingModule().before_set("theming", "templates", [
             {"template": str(self.home / "k.template"), "output": str(self.home / "out/a.conf"), "reload": ""},
             {"template": str(self.home / "other/k.template"), "output": str(self.home / "out2/b.conf"),
@@ -86,7 +86,7 @@ class MissingHelperTest(unittest.TestCase):
         from swayctl_center import units
         from swayctl_center.modules.components import ClipboardModule
         with tempfile.TemporaryDirectory() as d:
-            c = Context(Path(d), values=schema.defaults(), theme=themes.BUILTIN["nord"])
+            c = Context(Path(d), values=schema.defaults(), theme=themes.BUILTIN["dark"])
             v = schema.defaults()["clipboard"] | {"persist": True}
             with mock.patch.object(units, "installed", side_effect=lambda p: p != "wl-clip-persist"), \
                  mock.patch.object(units, "state", return_value=units.UnitState(False, "", 0)), \
@@ -141,19 +141,64 @@ class ClipboardPickerTest(unittest.TestCase):
     def test_pipelines_ignore_an_empty_choice_with_either_menu(self):
         from swayctl_center import clipboard
         for running, menu in ((False, "fuzzel --dmenu"), (True, "walker --dmenu")):
-            with mock.patch.object(clipboard, "walker_running", return_value=running):
+            with mock.patch.object(clipboard, "walker_running", return_value=running), \
+                    mock.patch.object(clipboard, "bar_running", return_value=False):
                 for what in ("history", "delete"):
                     cmd = clipboard.pipeline(what)
                     self.assertIn(menu, cmd)
                     self.assertIn('[ -n "$sel" ]', cmd)
                     self.assertNotIn("'", cmd)  # safe as one sh -c argument
                 self.assertEqual(clipboard.pipeline("launcher"), "walker" if running else "fuzzel")
+        # no Walker, swayctl-bar running: its Spotlight opens (":" = clipboard)
+        with mock.patch.object(clipboard, "walker_running", return_value=False), \
+                mock.patch.object(clipboard, "bar_running", return_value=True):
+            self.assertEqual(clipboard.pipeline("launcher"), "swayctl-bar launcher")
+            self.assertEqual(clipboard.pipeline("history"), "swayctl-bar launcher :")
+            self.assertEqual(clipboard.pipeline("delete"), "swayctl-bar launcher :")
+            self.assertEqual(clipboard.pipeline("clear"), "cliphist wipe")
+
+
+class NativeLauncherTest(unittest.TestCase):
+    """swayctl-bar's Spotlight over elephant (launcher.program = swayctl-bar)."""
+
+    def ctx(self, bar_program="swayctl-bar", launcher_program="swayctl-bar", **launcher):
+        v = schema.defaults()
+        v["bar"]["program"] = bar_program
+        v["launcher"] |= {"program": launcher_program} | launcher
+        return Context(Path("/tmp/x"), values=v, theme=themes.BUILTIN["dark"]), v
+
+    def test_bar_launcher_runs_elephant_without_walker(self):
+        from swayctl_center.modules.launcher import LauncherModule
+        c, v = self.ctx()
+        self.assertEqual(set(LauncherModule().programs(v["launcher"], c)), {"elephant"})
+        # Walker chosen, or the bar is waybar: Walker as before
+        for bar, prog in (("swayctl-bar", "walker"), ("waybar", "swayctl-bar")):
+            c, v = self.ctx(bar, prog)
+            self.assertEqual(set(LauncherModule().programs(v["launcher"], c)), {"elephant", "walker"})
+
+    def test_bar_config_carries_providers_and_prefixes(self):
+        from swayctl_center.modules.components import BarModule
+        c, v = self.ctx(runner=True, files_in_results=True)
+        cfg = BarModule().native_config(v["bar"], c)["launcher"]
+        self.assertEqual(cfg["providers"], ["desktopapplications", "menus", "calc", "websearch", "files"])
+        pre = {p["prefix"]: p["provider"] for p in cfg["prefixes"]}
+        self.assertEqual(pre, {"=": "calc", "/": "files", "@": "websearch", ".": "symbols",
+                               "$": "windows", ">": "runner", ":": "clipboard", ";": "providerlist"})
+        # clipboard not managed by swayctl-center: no ":" (no cliphist history)
+        c.values["clipboard"]["managed"] = False
+        pre = {p["prefix"] for p in BarModule().native_config(v["bar"], c)["launcher"]["prefixes"]}
+        self.assertNotIn(":", pre)
+        # a provider switched off loses its prefix too
+        c, v = self.ctx(symbols=False)
+        pre = {p["prefix"] for p in BarModule().native_config(v["bar"], c)["launcher"]["prefixes"]}
+        self.assertNotIn(".", pre)
+        self.assertIn("launcher", BarModule.depends_on)
 
 
 class LauncherTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.c = Context(Path(self.tmp.name), values=schema.defaults(), theme=themes.BUILTIN["nord"])
+        self.c = Context(Path(self.tmp.name), values=schema.defaults(), theme=themes.BUILTIN["dark"])
         self.env = mock.patch.dict(os.environ, {"SWAYCTL_CENTER_BIN": "/usr/bin/swayctl-center"})
         self.env.start()
 
@@ -185,7 +230,7 @@ class LauncherTest(unittest.TestCase):
         self.assertIn("duckduckgo.com", files["elephant/websearch.toml"])
         menu = tomllib.loads(files["elephant/menus/swayctl-center.toml"])
         self.assertTrue(all(e["actions"]["open"].startswith("/usr/bin/swayctl-center ") for e in menu["entries"]))
-        self.assertIn("@define-color window_bg_color #2e3440;", files["walker/themes/swayctl-center/style.css"])
+        self.assertIn("@define-color window_bg_color #1c1c1e;", files["walker/themes/swayctl-center/style.css"])
 
     def test_units_and_missing_packages(self):
         from swayctl_center.modules import launcher

@@ -65,22 +65,22 @@ class ResolveTest(unittest.TestCase):
     noon = datetime(2026, 9, 24, 12, tzinfo=ICT)
 
     def test_fixed(self):
-        r = resolve(values(mode="dark", dark_theme="nord"), themes.BUILTIN, self.noon)
-        self.assertEqual((r.theme.name, r.variant, r.source, r.next_change), ("nord", "dark", "fixed", None))
+        r = resolve(values(mode="dark", dark_theme="dark"), themes.BUILTIN, self.noon)
+        self.assertEqual((r.theme.name, r.variant, r.source, r.next_change), ("dark", "dark", "fixed", None))
 
     def test_schedule_and_override(self):
         r = resolve(values(), themes.BUILTIN, self.noon)
-        self.assertEqual((r.theme.name, r.source), ("gruvbox-light", "schedule"))
+        self.assertEqual((r.theme.name, r.source), ("light", "schedule"))
         override = {"variant": "dark", "until": r.next_change.isoformat()}
         r2 = resolve(values(), themes.BUILTIN, self.noon, override)
-        self.assertEqual((r2.theme.name, r2.source), ("gruvbox-dark", "override"))
+        self.assertEqual((r2.theme.name, r2.source), ("dark", "override"))
         # expired override is ignored
         r3 = resolve(values(), themes.BUILTIN, r.next_change + timedelta(minutes=1), override)
         self.assertEqual(r3.source, "schedule")
 
     def test_missing_theme_falls_back(self):
         r = resolve(values(mode="light", light_theme="nope"), themes.BUILTIN, self.noon)
-        self.assertEqual((r.theme.name, r.missing), ("gruvbox-light", "nope"))
+        self.assertEqual((r.theme.name, r.missing), ("light", "nope"))
 
     def test_user_theme(self):
         with tempfile.TemporaryDirectory() as d:
@@ -93,8 +93,8 @@ class ResolveTest(unittest.TestCase):
         self.assertTrue(available["mine"].dark)
 
     def test_sway_colors(self):
-        t = themes.BUILTIN["gruvbox-dark"]
-        self.assertEqual(client_colors(t)[0], "client.focused #fabd2f #282828 #ebdbb2 #fabd2f #fabd2f")
+        t = themes.BUILTIN["dark"]
+        self.assertEqual(client_colors(t)[0], "client.focused #0a84ff #1c1c1e #f5f5f7 #0a84ff #0a84ff")
         self.assertEqual(AppearanceModule().commands("appearance", {}, None, Context(Path("/x"), theme=t)),
                          client_colors(t))
 

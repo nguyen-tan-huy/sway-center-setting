@@ -28,8 +28,23 @@ _SCROLL_KEYS = {"input.touchpad": ("scroll_method", "natural_scroll", "scroll_fa
                 "input.pointer": ("natural_scroll", "scroll_factor")}
 
 
-def scroll_values(section: str, v: dict[str, Any], owner: str) -> dict[str, Any]:
+# the Smooth scrolling speeds that mean "sway's 1.0" (their defaults)
+_SPEED_ONE = {"touchpad": 1.2, "mouse": 0.45}
+
+
+def scroll_values(section: str, v: dict[str, Any], owner: str,
+                  scrolling: dict[str, Any] | None = None) -> dict[str, Any]:
     """What sway should use for the scroll keys of a device."""
+    if owner == "compositor" and scrolling is not None:
+        # swayctl-fx smooths sway's own scrolling: the Smooth scrolling page's
+        # direction and speed are the ones that apply, through sway's settings
+        dev = "touchpad" if section == "input.touchpad" else "mouse"
+        out = {"natural_scroll": scrolling[f"{dev}_natural"],
+               "scroll_factor": round(scrolling[f"{dev}_speed"] / _SPEED_ONE[dev], 3)}
+        if section == "input.touchpad":
+            method = v.get("scroll_method", "two_finger")
+            out["scroll_method"] = "two_finger" if method == "none" else method
+        return out
     if section == "input.touchpad":
         if owner == "smooth":
             return {"scroll_method": "none"}  # the service scrolls; sway scrolling too = double
@@ -48,6 +63,12 @@ class InputModule:
     tolerated_errors = ()
     depends_on = ("scrolling",)
 
+    def snapshot(self, ipc: swayipc.Connection) -> None:
+        # who scrolls depends on the compositor: find out before deciding,
+        # not only when the scrolling section (applied after this) does
+        from .scrolling import detect
+        detect(ipc)
+
     def commands(self, section: str, v: dict[str, Any], changed: set[str] | None,
                  ctx: Context | None = None) -> list[str]:
         target = "type:" + section.split(".", 1)[1]
@@ -55,7 +76,7 @@ class InputModule:
             from .scrolling import sway_scroll_owner
             device = "touchpad" if section == "input.touchpad" else "mouse"
             owner = sway_scroll_owner(ctx.values, device) if ctx is not None and ctx.values else "sway"
-            scroll = scroll_values(section, v, owner)
+            scroll = scroll_values(section, v, owner, (ctx.values or {}).get("scrolling") if ctx else None)
             v = {k: x for k, x in v.items() if k not in _SCROLL_KEYS[section]} | scroll
             if changed is not None and changed & set(_SCROLL_KEYS[section]):
                 changed = set(changed) | set(scroll)

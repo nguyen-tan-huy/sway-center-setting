@@ -55,6 +55,48 @@ Trang **Themed Apps** (`theming.templates`): mỗi mục là `{template, output,
 @MONO_FONT@ @VARIANT@`, rồi chạy lệnh `reload`. Bar và thông báo còn có `config_file` (dùng config waybar/swaync
 của bạn) và `style_template` (style từ template); bar có `theme` riêng.
 
+## Thông báo
+
+swayctl-bar tự làm server thông báo (`org.freedesktop.Notifications`), không cần swaync: popup ở góc chọn trong
+trang **Notifications**, kính lỏng khi bật `effects.glass` (trên swayctl-fx), danh sách gần đây + Không làm phiền
+trong Quick Settings, `swayctl-bar dnd on|off|toggle`. Muốn quay về swaync: `swayctl-center set
+notifications.program swaync`.
+
+## Design token
+
+Mỗi theme sinh thêm một bộ token (`themes.Theme.tokens`, pha màu trong OKLab): `surface`, `surface_raised`,
+`surface_overlay`, `text`, `text_secondary`, `text_disabled`, `accent`, `accent_fg`, `outline`, `outline_strong`,
+`focus_ring`, `success`, `warning`, `error` và `radius_sm/md/lg`, `gap`, `border_width`, `blur`, `panel_opacity`.
+Template dùng được `@SURFACE_RAISED@`, `@TEXT_SECONDARY_HEX@`, `@RADIUS_MD@`, `@PANEL_ALPHA@`… (danh sách trong
+`theming.py`); `theming.adwaita_css()` sinh màu/biến CSS cho libadwaita. Theme riêng chỉ cần
+`{"accent": "#3584e4", "variant": "dark"}` (phần còn lại tự sinh theo sắc độ của accent), và có thể ghi đè token bằng
+`"tokens": {"radius_md": 6}`. Có sẵn `modern-light` / `modern-dark`.
+
+## swayctl-bar (Desktop > Bar > Bar program)
+
+Thanh viết bằng Rust (GTK4 + libadwaita + gtk4-layer-shell, vẽ bằng GPU, ~39 MB, không polling) trong
+`swayctl-bar/`, gói `packaging/swayctl-bar`. Mỗi màn hình một thanh: workspaces, mode, tiêu đề, đồng hồ (nhấp: lịch),
+tray (StatusNotifierItem + menu), cụm trạng thái mở **Quick Settings** (Wi-Fi, Bluetooth, Ánh sáng đêm, Không làm phiền,
+Chế độ nguồn, độ sáng, âm lượng + đầu ra, media, khoá/nguồn) có hiệu ứng lò xo. Phím âm lượng/độ sáng hiện OSD
+(`swayctl-bar osd volume-up|…`), `swayctl-bar quick` mở Quick Settings. Config/style sinh từ cài đặt bar + token theme
+vào `generated/bar/`, thanh tự đọc lại khi file đổi.
+
+## swayctl-fx (SwayFX + bản vá)
+
+`~/Projects/swayctl-fx` (nhánh `swayctl`), gói `packaging/swayctl-fx`: cài **cạnh** sway, phiên đăng nhập riêng
+"Sway (swayctl-fx)" — "Sway" gốc luôn còn để quay lại. Thêm: cuộn mượt trong compositor (`input <id> smooth_scroll
+enabled`, `scroll_friction`, `scroll_ramp`, cửa sổ `scroll_native enable`), `swayctl_features` trong `get_version`.
+swayctl-center tự nhận ra: trang Desktop > Effects (bo góc, bóng, blur, làm tối cửa sổ, panel, **Liquid Glass** cho
+thanh/Quick Settings/OSD: `layer_effects <ns> "glass enable"`, `glass_refraction <px>`) và cuộn mượt không cần dịch vụ root.
+Nhóm **Liquid glass** trong Effects: refraction (độ bẻ cong), frost (độ mờ), tint, specular (viền sáng), bezel (độ dày mép,
+0 = theo bo góc), dispersion (tách màu mép, 0 = không) — gửi `glass_highlight/edge/chroma` khi fork hỗ trợ `glass-tune`.
+Preset `swayctl-center action preset.modern` bật cả bộ.
+
+## Thử trong sandbox
+
+`tools/sandbox.sh` (bwrap: HOME/D-Bus/runtime riêng, không chạm phiên thật): `--sway` sway headless, `--fx` bản fork.
+`tools/preview.py`, `tools/desktop_shot.sh`, `tools/perf.py`, `tools/scroll_test.sh`, `tools/tray_test.sh`.
+
 ## Launcher (Walker)
 
 Trang **Launcher**: Walker (giao diện) + elephant (dịch vụ kết quả, mỗi loại một plugin từ AUR). App chạy cả hai

@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 from swayctl_center import schema, swayconfig
+from tests.legacy import legacy_defaults
 from swayctl_center.modules import Context
 from swayctl_center.modules.components import BarModule, PolkitAgentModule
 from swayctl_center.modules.keybindings import CLIPBOARD, LAUNCHER, KeybindingsModule
@@ -50,10 +51,10 @@ class StockKeybindingsTest(unittest.TestCase):
 
 class SwayBarTest(unittest.TestCase):
     def ctx(self, live):
-        return Context(Path("/app"), live=live, values=schema.defaults())
+        return Context(Path("/app"), live=live, values=legacy_defaults())
 
     def test_hidden_while_managed_and_restored_after(self):
-        m, v = BarModule(), schema.defaults()["bar"]
+        m, v = BarModule(), legacy_defaults()["bar"]
         self.assertEqual(m.commands("bar", v, None, self.ctx({"bar-0": "dock"})), ["bar bar-0 mode invisible"])
         self.assertEqual(m.commands("bar", v, None, self.ctx({"bar-0": "invisible"})), [])
         self.assertEqual(m.commands("bar", v | {"managed": False}, {"managed"}, self.ctx({"bar-0": "invisible"})),
@@ -61,11 +62,11 @@ class SwayBarTest(unittest.TestCase):
         self.assertEqual(m.commands("bar", v | {"managed": False}, None, self.ctx({"bar-0": "invisible"})), [])
 
     def test_bars_hidden_by_the_user_stay_hidden(self):
-        m, v = BarModule(), schema.defaults()["bar"] | {"managed": False}
+        m, v = BarModule(), legacy_defaults()["bar"] | {"managed": False}
         self.assertEqual(m.commands("bar", v, None, self.ctx({"bar-0": "invisible"})), [])
 
     def test_no_sway_bars(self):
-        self.assertEqual(BarModule().commands("bar", schema.defaults()["bar"], None, self.ctx(None)), [])
+        self.assertEqual(BarModule().commands("bar", legacy_defaults()["bar"], None, self.ctx(None)), [])
 
 
 class PolkitAgentTest(unittest.TestCase):
@@ -79,14 +80,14 @@ class FontWeightTest(unittest.TestCase):
     def test_bold_everywhere(self):
         from swayctl_center import theming, themes
         from swayctl_center.modules.font import FontModule
-        v = schema.defaults()["font"] | {"family": "Inter", "weight": "bold", "size": 11}
+        v = legacy_defaults()["font"] | {"family": "Inter", "weight": "bold", "size": 11}
         self.assertEqual(FontModule().commands("font", v, None), ["font pango:Inter Bold 11"])
         self.assertEqual(FontModule().gsettings_values(v)["font-name"], "Inter Bold 11")
-        self.assertEqual(theming.placeholders(themes.BUILTIN["gruvbox-dark"], v)["@FONT_WEIGHT@"], "700")
-        values = schema.defaults()
+        self.assertEqual(theming.placeholders(themes.BUILTIN["dark"], v)["@FONT_WEIGHT@"], "700")
+        values = legacy_defaults()
         values["font"] = v
         css = BarModule().files(values["bar"], Context(Path("/app"), values=values,
-                                                        theme=themes.BUILTIN["gruvbox-dark"]))["style.css"]
+                                                        theme=themes.BUILTIN["dark"]))["style.css"]
         self.assertIn("font-weight: 700", css)
 
     def test_import_splits_the_weight_off(self):

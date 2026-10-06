@@ -5,13 +5,14 @@ from pathlib import Path
 from unittest import mock
 
 from swayctl_center import schema, swayconfig, themes, units
+from tests.legacy import legacy_defaults
 from swayctl_center.modules import Context
 from swayctl_center.modules.components import (BarModule, ClipboardModule, IdleModule,
                                                NotificationsModule, lock_command)
 
 
-def ctx(d="/app", theme="gruvbox-dark", **values):
-    v = schema.defaults()
+def ctx(d="/app", theme="dark", **values):
+    v = legacy_defaults()
     v["font"].update(family="Inter", size=12)
     for section, items in values.items():
         v[section].update(items)
@@ -21,14 +22,14 @@ def ctx(d="/app", theme="gruvbox-dark", **values):
 class BarTest(unittest.TestCase):
     def test_config_and_style(self):
         c = ctx()
-        v = schema.defaults()["bar"] | {"position": "bottom", "modules_right": ["clock", "tray"]}
+        v = legacy_defaults()["bar"] | {"position": "bottom", "modules_right": ["clock", "tray"]}
         files = BarModule().files(v, c)
         cfg = json.loads(files["config.json"])
         self.assertEqual(cfg["position"], "bottom")
         self.assertEqual(cfg["modules-right"], ["clock", "tray"])
         self.assertIn("clock", cfg)  # module config included for used modules only
         self.assertNotIn("battery", cfg)
-        self.assertIn("window#waybar { background: #282828; color: #ebdbb2; }", files["style.css"])
+        self.assertIn("window#waybar { background: #1c1c1e; color: #f5f5f7; }", files["style.css"])
         self.assertIn('font-family: "Inter", "Symbols Nerd Font", sans-serif; font-weight: 400; font-size: 16px', files["style.css"])
         self.assertEqual(BarModule().programs(v, c)[""],
                          ["waybar", "-c", "/app/generated/bar/config.json", "-s", "/app/generated/bar/style.css"])
@@ -36,34 +37,35 @@ class BarTest(unittest.TestCase):
     def test_module_validation(self):
         key = schema.lookup("bar", "modules_left")
         self.assertEqual(key.validate(["clock", "clock", "tray"]), ["clock", "tray"])
-        # the user's own modules are fine
-        self.assertEqual(key.validate(["custom/media", "battery#bat2", "group/hw"]),
-                         ["custom/media", "battery#bat2", "group/hw"])
-        for bad in (["Sway Workspaces"], ["clock; rm"], [5]):
-            with self.assertRaises(ValueError):
-                key.validate(bad)
+        # settings saved for waybar convert; what swayctl-bar can't show drops
+        self.assertEqual(key.validate(["sway/workspaces", "pulseaudio", "battery#bat2", "custom/media"]),
+                         ["workspaces", "status"])
+        self.assertEqual(key.validate(["Sway Workspaces", "clock; rm"]), [])
+        with self.assertRaises(ValueError):
+            key.validate([5])
 
 
 class NotificationsTest(unittest.TestCase):
     def test_files(self):
-        v = schema.defaults()["notifications"] | {"position_x": "left", "width": 350}
-        files = NotificationsModule().files(v, ctx(theme="gruvbox-light"))
+        v = legacy_defaults()["notifications"] | {"program": "swaync", "position_x": "left", "width": 350}
+        files = NotificationsModule().files(v, ctx(theme="light"))
         cfg = json.loads(files["config.json"])
         self.assertEqual((cfg["positionX"], cfg["notification-window-width"]), ("left", 350))
-        self.assertIn("--noti-bg: 251, 241, 199;", files["style.css"])
-        self.assertIn("--text-color: #3c3836;", files["style.css"])
+        self.assertIn("--noti-bg: 255, 255, 255;", files["style.css"])  # OSD milk
+        self.assertIn("--noti-bg-alpha: 0.65;", files["style.css"])
+        self.assertIn("--text-color: #1d1d1f;", files["style.css"])
 
 
 class IdleTest(unittest.TestCase):
     def test_lock_command_uses_theme(self):
-        cmd = lock_command(ctx(theme="nord"))
-        self.assertEqual(cmd[:4], ["swaylock", "-f", "-c", "2e3440"])
+        cmd = lock_command(ctx(theme="dark"))
+        self.assertEqual(cmd[:4], ["swaylock", "-f", "-c", "1c1c1e"])
 
     def test_programs(self):
-        v = schema.defaults()["idle"] | {"lock_after": 120, "screen_off_after": 0}
+        v = legacy_defaults()["idle"] | {"lock_after": 120, "screen_off_after": 0}
         argv = IdleModule().programs(v, ctx())[""]
         self.assertEqual(argv[:4], ["swayidle", "-w", "timeout", "120"])
-        self.assertTrue(argv[4].startswith("swaylock -f -c 282828"))
+        self.assertTrue(argv[4].startswith("swaylock -f -c 1c1c1e"))
         self.assertNotIn("resume", argv)
         self.assertEqual(argv[5], "before-sleep")
 
@@ -80,7 +82,7 @@ class IdleTest(unittest.TestCase):
 
 class ClipboardTest(unittest.TestCase):
     def test_programs(self):
-        v = schema.defaults()["clipboard"] | {"max_items": 100, "images": False, "persist": False}
+        v = legacy_defaults()["clipboard"] | {"max_items": 100, "images": False, "persist": False}
         progs = ClipboardModule().programs(v, ctx())
         self.assertEqual(list(progs), ["text"])
         progs = ClipboardModule().programs(v | {"persist": True}, ctx())
@@ -105,7 +107,7 @@ class ComponentApplyTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.c = ctx(self.tmp.name)
-        self.v = schema.defaults()["bar"]
+        self.v = legacy_defaults()["bar"]
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -132,7 +134,7 @@ class ComponentApplyTest(unittest.TestCase):
              mock.patch.object(units, "start") as start2:
             m.apply_extra("bar", self.v, None, self.c)          # nothing changed
             restart.assert_not_called()
-            self.c.theme = themes.BUILTIN["nord"]                # theme changed -> new CSS
+            self.c.theme = themes.BUILTIN["light"]                # theme changed -> new CSS
             m.apply_extra("bar", self.v, None, self.c)
             restart.assert_called_once_with("swayctl-center-bar.service")
             start2.assert_not_called()

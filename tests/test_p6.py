@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from swayctl_center import jsonc, schema, swayconfig, themes
+from tests.legacy import legacy_defaults
 from swayctl_center.modules import Context
 from swayctl_center.modules.components import BarModule, lock_command
 from swayctl_center.modules.input import InputModule
@@ -57,10 +58,10 @@ class BarBaseConfigTest(unittest.TestCase):
             schema.lookup("bar", k).validate(val)
 
     def test_merge_keeps_user_modules_and_fixes_includes(self):
-        v = schema.defaults()["bar"] | self.adopted()
+        v = legacy_defaults()["bar"] | self.adopted()
         v |= {"config_file": str(self.d / "config.jsonc"), "margin_top": 8,
               "modules_right": ["clock", "battery#bat2", "cpu"]}
-        c = Context(self.d / "app", values=schema.defaults(), theme=themes.BUILTIN["nord"])
+        c = Context(self.d / "app", values=legacy_defaults(), theme=themes.BUILTIN["dark"])
         cfg = json.loads(BarModule().files(v, c)["config.json"])
         self.assertEqual(cfg["margin-top"], 8)
         self.assertEqual(cfg["custom/media"]["exec"], "~/.config/waybar/scripts/media.sh")
@@ -73,7 +74,7 @@ class BarBaseConfigTest(unittest.TestCase):
 
 class LayoutOptionsTest(unittest.TestCase):
     def test_border_style_and_behaviour(self):
-        v = schema.defaults()["layout"] | {"border_style": "normal", "border": 3, "focus_follows_mouse": "no",
+        v = legacy_defaults()["layout"] | {"border_style": "normal", "border": 3, "focus_follows_mouse": "no",
                                            "workspace_auto_back_and_forth": True}
         cmds = LayoutModule().commands("layout", v, {"border_style"})
         self.assertIn("default_border normal 3", cmds)
@@ -99,7 +100,7 @@ class InputOptionsTest(unittest.TestCase):
         got = InputModule().import_current(ipc, cfg, None)["input.keyboard"]
         self.assertEqual(got, {"repeat_delay": 300, "repeat_rate": 50, "xkb_layout": "us,vn",
                                "xkb_options": "caps:escape"})
-        v = schema.defaults()["input.keyboard"] | got
+        v = legacy_defaults()["input.keyboard"] | got
         cmds = InputModule().commands("input.keyboard", v, None)
         self.assertIn("input type:keyboard xkb_layout us,vn", cmds)
         self.assertNotIn("xkb_variant", " ".join(cmds))  # empty on a full apply: skipped
@@ -121,11 +122,11 @@ class InputOptionsTest(unittest.TestCase):
 
 class LockTest(unittest.TestCase):
     def test_options(self):
-        values = schema.defaults()
+        values = legacy_defaults()
         values["idle"] |= {"lock_background": "wallpaper", "show_failed_attempts": True,
                            "ignore_empty_password": True}
         values["background"]["image"] = "wallpapers/a.jpg"
-        cmd = lock_command(Context(Path("/app"), values=values, theme=themes.BUILTIN["nord"]))
+        cmd = lock_command(Context(Path("/app"), values=values, theme=themes.BUILTIN["dark"]))
         self.assertEqual(cmd[-6:], ["-i", "/app/wallpapers/a.jpg", "-s", "fill", "-F", "-e"])
 
 

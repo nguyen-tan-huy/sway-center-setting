@@ -17,6 +17,11 @@ _FUZZEL = 'fuzzel --dmenu --prompt "{prompt}: "'
 _WALKER = 'walker --dmenu --placeholder "{prompt}"'
 
 
+def bar_running() -> bool:
+    return subprocess.run(["pgrep", "-x", "swayctl-bar"], stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode == 0
+
+
 def walker_running() -> bool:
     return units.installed("walker") and units.state(f"{units.PREFIX}launcher-walker.service").active
 
@@ -28,7 +33,15 @@ def pipeline(what: str) -> str:
     if what == "clear":
         return "cliphist wipe"
     if what == "launcher":
-        return "walker" if walker_running() else "fuzzel"
+        if walker_running():
+            return "walker"
+        # swayctl-bar's Spotlight: the bar is running and Walker isn't
+        # (swayctl-center leaves Walker out when the bar is the launcher)
+        return "swayctl-bar launcher" if bar_running() else "fuzzel"
+    if what in ("history", "delete") and not walker_running() and bar_running():
+        # swayctl-bar's launcher in clipboard mode: Enter copies, Shift+Delete
+        # removes (one view for both)
+        return "swayctl-bar launcher :"
     menu = _WALKER if walker_running() else _FUZZEL
     if what == "history":
         return _PICK.format(menu=menu.format(prompt="Clipboard"), then="decode | wl-copy")

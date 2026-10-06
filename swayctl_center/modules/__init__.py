@@ -48,15 +48,16 @@ class Module(Protocol):
 
 
 def all_modules() -> list[Module]:
-    from . import (appearance, autostart, background, components, font, input, keybindings, keyremap,
-                   launcher, layout, night_light, outputs, scrolling, theming)
-    return [layout.LayoutModule(), scrolling.ScrollingModule(), input.InputModule(), outputs.OutputsModule(),
+    from . import (appearance, autostart, background, components, effects, font, input, keybindings,
+                   keyremap, launcher, layout, night_light, outputs, scrolling, theming, unlock)
+    return [layout.LayoutModule(), effects.EffectsModule(), scrolling.ScrollingModule(), input.InputModule(), outputs.OutputsModule(),
             appearance.AppearanceModule(), appearance.LocationModule(),
             night_light.NightLightModule(), background.BackgroundModule(), font.FontModule(),
             keybindings.KeybindingsModule(), keyremap.KeyremapModule(), components.BarModule(), components.NotificationsModule(),
             components.IdleModule(), components.ClipboardModule(), components.InputMethodModule(),
             components.PolkitAgentModule(),
-            launcher.LauncherModule(), theming.ThemingModule(), autostart.AutostartModule()]
+            launcher.LauncherModule(), theming.ThemingModule(), autostart.AutostartModule(),
+            unlock.UnlockModule()]
 
 
 def by_section() -> dict[str, Module]:
