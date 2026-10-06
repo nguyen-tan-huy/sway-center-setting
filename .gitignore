@@ -3,3 +3,23 @@ __pycache__/
 /packaging/src/
 /packaging/pkg/
 /packaging/*.pkg.tar.*
+tools/out/
+swayctl-bar/target/
+tools/vptr/vptr
+tools/vptr/*-protocol.h
+tools/vptr/*-protocol.c
+# makepkg output of the sub-packages (bar: cargo builds into src/, fx: makepkg's
+# bare mirrors of ~/Projects/swayctl-fx in swayfx/ + scenefx/)
+/packaging/swayctl-bar/src/
+/packaging/swayctl-bar/pkg/
+/packaging/swayctl-bar/*.pkg.tar.*
+/packaging/swayctl-fx/src/
+/packaging/swayctl-fx/pkg/
+/packaging/swayctl-fx/swayfx/
+/packaging/swayctl-fx/scenefx/
+/packaging/swayctl-fx/*.pkg.tar.*
+# release bundles (built from packaging/install.sh + README.txt and the packages)
+/dist/
+/swayctl-setup/
+# Claude Code per-machine settings (the roadmap skill is kept)
+.claude/settings.local.json
