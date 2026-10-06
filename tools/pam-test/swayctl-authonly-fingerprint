@@ -1,0 +1,5 @@
+#%PAM-1.0
+# like /etc/pam.d/swaylock: an auth section and NO account section (pam_acct_mgmt
+# on it always fails): unlocking must only need the auth part
+auth required pam_exec.so quiet /usr/bin/sleep 2
+auth required pam_permit.so

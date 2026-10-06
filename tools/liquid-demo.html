@@ -1,0 +1,988 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>swayctl-center · Liquid Glass UI test</title>
+<style>
+/* ===========================================================================
+   Mock shell — mirrors swayctl-bar/src/default.css + components.py glass_css.
+   Keep in sync with both when the shell's look changes.
+   =========================================================================== */
+:root{
+  --accent:#0a84ff; --accent-fg:#ffffff; --milk-text:#1d1d1f;
+  --font:"Inter",sans-serif; --fw:700; --bar-h:34px; --bar-size:12pt;
+  --mt:8px; --mr:8px; --ml:8px; --spacing:4px;
+
+  /* archisvaze demo defaults (tunable from the panel) */
+  --tint:6;                       /* % white body */
+  --in: inset 0 0 20px -5px rgba(255,255,255,.45);
+  --out: 0 4px 24px rgba(0,0,0,.18);
+  --rim: none;                    /* the edge highlight comes from the map */
+
+}
+/* adaptive text: --k is set per glass element from the luminance of the
+   wallpaper under it (section 3b): 0 = white ink, 1 = near-black ink. It is a
+   registered <number>, so the colour, halo and track all glide between them. */
+@property --k{syntax:"<number>";inherits:true;initial-value:1}
+@property --h{syntax:"<number>";inherits:true;initial-value:.4}
+[data-ink]{
+  --fg:color-mix(in oklab, #111114 calc(var(--k) * 100%), #ffffff);
+  /* --h = halo strength: grows on busy / mid-tone backgrounds */
+  --halo-c:color-mix(in oklab, rgba(255,255,255,calc(.35 + var(--h) * .6)) calc(var(--k) * 100%), rgba(0,0,0,calc(.35 + var(--h) * .6)));
+  --track:color-mix(in oklab, rgba(0,0,0,.18) calc(var(--k) * 100%), rgba(255,255,255,.30));
+  --hover:color-mix(in oklab, rgba(0,0,0,.07) calc(var(--k) * 100%), rgba(255,255,255,.12));
+  color:var(--fg)!important;
+  text-shadow:0 0 1px var(--halo-c),0 0 calc(4px + var(--h) * 6px) var(--halo-c),0 0 calc(var(--h) * 14px) var(--halo-c);
+  transition:--k .45s cubic-bezier(.32,.72,0,1),--h .45s ease;
+}
+[data-ink] svg{filter:drop-shadow(0 0 1.5px var(--halo-c))}
+.tile.active[data-ink],.ws.focused{color:var(--accent-fg)!important;text-shadow:0 1px 2px rgba(0,0,0,.25)}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:var(--font); font-weight:var(--fw); color:var(--milk-text);
+  -webkit-font-smoothing:antialiased;
+}
+#bg{position:fixed;inset:0;z-index:0;background:#33343c center/cover no-repeat}
+#bg canvas{display:block;width:100%;height:100%}
+#stage{position:fixed;inset:0;z-index:1}
+
+/* ---- one glass pane: refraction under the content, tint + glow on top ---- */
+.pane{
+  position:relative; isolation:isolate;
+  --r:999px; --fill:rgba(255,255,255,calc(var(--tint) / 100));
+  border:var(--rim); border-radius:var(--r);
+  box-shadow:var(--out); color:var(--milk-text);
+}
+.pane::after{
+  content:""; position:absolute; inset:0; z-index:-1; border-radius:inherit;
+  backdrop-filter:var(--lg); -webkit-backdrop-filter:var(--lg); isolation:isolate;
+}
+.pane::before{
+  content:""; position:absolute; inset:0; z-index:1; border-radius:inherit;
+  background:var(--fill); box-shadow:var(--in); pointer-events:none;
+}
+.pane>*{position:relative;z-index:2}
+
+/* ---- bar ---------------------------------------------------------------- */
+#bar{
+  position:absolute; left:var(--ml); right:var(--mr); top:var(--mt);
+  height:var(--bar-h); background:none; font-size:var(--bar-size);
+}
+.bar-box{display:flex;align-items:center;justify-content:space-between;height:100%;padding:0 6px}
+.mod{display:flex;align-items:center;gap:var(--spacing)}
+.pill{
+  --r:999px; height:calc(var(--bar-h) - 6px); margin:3px 2px;
+  display:flex;align-items:center;padding:0 12px;font-weight:600;white-space:nowrap;
+}
+.workspaces{padding:2px;gap:2px}
+.ws{
+  min-width:26px;height:100%;padding:0 8px;border-radius:999px;
+  display:flex;align-items:center;justify-content:center;
+  color:inherit;opacity:.78;
+}
+.ws.focused{opacity:1}
+.ws.focused{
+  background:rgba(10,132,255,.92); color:var(--accent-fg);
+  border:1px solid rgba(255,255,255,.35); box-shadow:inset 0 1px 0 rgba(255,255,255,.30);
+}
+.status{gap:8px}
+.status .ico{display:flex;align-items:center}
+.battery-percent{font-feature-settings:"tnum"}
+
+/* ---- Quick Settings ------------------------------------------------------ */
+#quick{
+  position:absolute; top:calc(var(--mt) + var(--bar-h) + 8px); right:calc(var(--mr) + 8px);
+  width:360px;
+}
+.quick-panel{
+  background:none;border:none;border-radius:20px;padding:12px;
+  color:var(--milk-text);font-size:11pt;
+}
+.quick-main{display:flex;flex-direction:column;gap:12px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{--r:999px;display:flex;align-items:stretch;overflow:hidden}
+.tile-main{
+  display:flex;align-items:center;gap:10px;flex:1;min-width:0;
+  background:none;border:none;box-shadow:none;border-radius:999px;
+  padding:8px 12px;color:inherit;font:inherit;text-align:left;cursor:pointer;
+}
+.tile-main:hover{background:var(--hover,rgba(0,0,0,.06))}
+.tile-more{
+  background:none;border:none;box-shadow:none;border-radius:999px;
+  padding:0 10px;color:inherit;cursor:pointer;
+}
+.tile-more:hover{background:var(--hover,rgba(0,0,0,.06))}
+.tile-txt{min-width:0}
+.tile-title{display:block;font-weight:700;font-size:1em}
+.tile-sub{display:block;font-size:.85em;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.active{
+  --fill:linear-gradient(180deg, rgba(10,132,255,.96), rgba(10,132,255,.80));
+  --rim:1px solid rgba(255,255,255,.35);
+  --in: inset 0 1px 0 rgba(255,255,255,.35);
+  color:var(--accent-fg);
+}
+.tile.active .tile-sub{opacity:.85}
+
+.slider-row{--r:999px;display:flex;align-items:center;gap:8px;padding:8px 16px}
+.slider-row .ico{display:flex;flex:0 0 auto}
+.scale{position:relative;flex:1;height:12px;border-radius:999px;background:var(--track,rgba(0,0,0,.14))}
+.scale .fill{position:absolute;inset:0 auto 0 0;width:calc(var(--vn) * 100%);border-radius:999px;background:var(--accent)}
+.scale .knob{
+  position:absolute;top:50%;left:calc(9px + (100% - 18px) * var(--vn));
+  width:18px;height:18px;margin-top:-9px;border-radius:50%;background:#fff;
+  box-shadow:0 0 0 1px rgba(0,0,0,.12),0 1px 4px rgba(0,0,0,.25);
+}
+.ghost-btn{
+  width:34px;height:34px;border-radius:999px;border:none;background:none;
+  color:inherit;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;
+}
+
+.media{--r:14px;display:flex;align-items:center;gap:8px;padding:8px 10px}
+.media-txt{flex:1;min-width:0}
+.media-title{display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.media-artist{display:block;font-size:.85em;opacity:.75;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.media button{
+  --r:999px;width:34px;height:34px;border-radius:999px;border:var(--rim);
+  background:var(--fill);box-shadow:var(--out);color:inherit;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;
+}
+.media button::after{
+  content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;
+  backdrop-filter:var(--lg);-webkit-backdrop-filter:var(--lg);isolation:isolate;
+}
+.media button{position:relative;isolation:isolate}
+
+.quick-footer{display:flex;justify-content:flex-end;gap:6px;padding-top:4px}
+.quick-footer button{
+  --r:999px;position:relative;isolation:isolate;width:34px;height:34px;border-radius:999px;
+  border:var(--rim);background:var(--fill);box-shadow:var(--out);color:var(--milk-text);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.quick-footer button::after{
+  content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;
+  backdrop-filter:var(--lg);-webkit-backdrop-filter:var(--lg);isolation:isolate;
+}
+
+/* ---- OSD ---------------------------------------------------------------- */
+#osd{position:absolute;left:50%;bottom:72px;transform:translateX(-50%)}
+.osd{
+  --r:999px;display:flex;align-items:center;gap:12px;
+  padding:10px 18px 10px 14px;font-size:11pt;
+}
+.osd .pct{font-weight:600;font-size:1.15em;font-feature-settings:"tnum"}
+.osd .lvl{width:110px;height:12px;border-radius:999px;background:var(--track,rgba(0,0,0,.14));overflow:hidden}
+.osd .lvl i{display:block;height:100%;width:42%;border-radius:999px;background:var(--accent)}
+
+/* ---- draggable test button ------------------------------------------- */
+#drag-btn{
+  --r:999px;position:absolute;left:50%;top:45%;
+  display:flex;align-items:center;gap:8px;padding:12px 22px;
+  font:inherit;font-size:13pt;font-weight:700;background:none;
+  cursor:grab;user-select:none;touch-action:none;
+  transition:transform .18s cubic-bezier(.32,.72,0,1);
+}
+#drag-btn.dragging{cursor:grabbing;transform:scale(1.06)}
+#drag-btn .grip{opacity:.6}
+
+/* ---- controls ------------------------------------------------------------ */
+#toggle{
+  position:fixed;top:calc(var(--mt) + var(--bar-h) + 8px);left:16px;z-index:101;
+  width:36px;height:36px;border-radius:10px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.10);background:rgba(22,22,26,.72);
+  backdrop-filter:blur(20px);color:#fff;display:flex;align-items:center;justify-content:center;
+  transition:left .3s cubic-bezier(.32,.72,0,1);
+}
+body.panel-open #toggle{left:302px}
+#controls{
+  position:fixed;top:12px;bottom:12px;left:12px;width:278px;z-index:100;
+  background:rgba(22,22,26,.82);backdrop-filter:blur(40px) saturate(1.4);
+  color:#fff;border:1px solid rgba(255,255,255,.08);border-radius:20px;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",system-ui,sans-serif;
+  font-weight:400;font-size:13px;display:flex;flex-direction:column;overflow:hidden;
+  transform:translateX(calc(-100% - 24px));transition:transform .35s cubic-bezier(.32,.72,0,1);
+}
+#controls.open{transform:none}
+#controls h2{
+  margin:16px 0 6px;font-size:11px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:rgba(255,255,255,.3);
+}
+#controls h2:first-child{margin-top:0}
+#controls .scroll{flex:1;overflow-y:auto;padding:14px 14px 20px;scrollbar-width:thin}
+#controls label{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:5px 0;font-size:12.5px;color:rgba(255,255,255,.55)}
+#controls input[type=range]{flex:1;min-width:0;accent-color:#8b7cf7}
+#controls .vd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:rgba(255,255,255,.4);min-width:34px;text-align:right}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.presets button{
+  font:inherit;font-size:11.5px;font-weight:600;color:#fff;cursor:pointer;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+  border-radius:999px;padding:5px 11px;
+}
+.presets button:hover{background:rgba(255,255,255,.16)}
+.presets button.on{background:#8b7cf7;border-color:#8b7cf7}
+#bgs{display:flex;flex-wrap:wrap;gap:6px}
+.bg-thumb{
+  position:relative;width:46px;height:46px;padding:0;flex:0 0 auto;cursor:pointer;
+  border:2px solid transparent;border-radius:10px;overflow:hidden;background:rgba(255,255,255,.06);
+}
+.bg-thumb img{display:block;width:100%;height:100%;object-fit:cover}
+.bg-thumb:hover{border-color:rgba(255,255,255,.35)}
+.bg-thumb.on{border-color:#8b7cf7;box-shadow:0 0 0 1px #8b7cf7}
+.bg-thumb.cur::after{
+  content:'\2713';position:absolute;right:2px;bottom:0;font-size:11px;line-height:1;
+  color:#fff;text-shadow:0 0 3px #000,0 0 2px #000;
+}
+#readout{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;line-height:1.55;
+  color:rgba(255,255,255,.62);background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.07);
+  border-radius:10px;padding:9px 10px;white-space:pre-wrap;word-break:break-word;
+}
+#controls .hint{font-size:11.5px;color:rgba(255,255,255,.35);margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<div id="bg"></div>
+
+<div id="stage">
+  <!-- ================= bar ================= -->
+  <div id="bar">
+    <div class="bar-box">
+      <div class="mod" id="bar-left"></div>
+      <div class="mod" id="bar-center"></div>
+      <div class="mod" id="bar-right"></div>
+    </div>
+  </div>
+
+  <!-- ================= Quick Settings ================= -->
+  <div id="quick">
+    <div class="quick-panel">
+      <div class="quick-main">
+        <div class="tiles">
+          <div class="pane tile active">
+            <button class="tile-main">
+              <span class="ico" data-icon="wifi"></span>
+              <span class="tile-txt"><span class="tile-title">Wi-Fi</span><span class="tile-sub">FPT Telecom</span></span>
+            </button>
+            <button class="tile-more" aria-label="Wi-Fi settings"><span class="ico" data-icon="chevron"></span></button>
+          </div>
+          <div class="pane tile">
+            <button class="tile-main">
+              <span class="ico" data-icon="bluetooth-off"></span>
+              <span class="tile-txt"><span class="tile-title">Bluetooth</span><span class="tile-sub">Off</span></span>
+            </button>
+            <button class="tile-more" aria-label="Bluetooth settings"><span class="ico" data-icon="chevron"></span></button>
+          </div>
+          <div class="pane tile">
+            <button class="tile-main">
+              <span class="ico" data-icon="moon"></span>
+              <span class="tile-txt"><span class="tile-title">Night Light</span><span class="tile-sub">Off</span></span>
+            </button>
+          </div>
+          <div class="pane tile">
+            <button class="tile-main">
+              <span class="ico" data-icon="dnd"></span>
+              <span class="tile-txt"><span class="tile-title">Do Not Disturb</span><span class="tile-sub">Off</span></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="pane slider-row" style="--vn:.65">
+          <span class="ico" data-icon="sun"></span>
+          <span class="scale"><span class="fill"></span><span class="knob"></span></span>
+        </div>
+
+        <div class="pane slider-row" style="--vn:.42">
+          <button class="ghost-btn"><span class="ico" data-icon="volume"></span></button>
+          <span class="scale"><span class="fill"></span><span class="knob"></span></span>
+          <button class="ghost-btn"><span class="ico" data-icon="chevron"></span></button>
+        </div>
+
+        <div class="pane media">
+          <span class="media-txt">
+            <span class="media-title">TẾT NÀY CON SẼ VỀ - TU</span>
+            <span class="media-artist">Thanks Long Phiếu Lưu Ký</span>
+          </span>
+          <button><span class="ico" data-icon="prev"></span></button>
+          <button><span class="ico" data-icon="pause"></span></button>
+          <button><span class="ico" data-icon="next"></span></button>
+        </div>
+
+        <div class="quick-footer">
+          <button title="Settings"><span class="ico" data-icon="gear"></span></button>
+          <button title="Lock"><span class="ico" data-icon="lock"></span></button>
+          <button title="Power"><span class="ico" data-icon="power"></span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= OSD ================= -->
+  <div id="osd">
+    <div class="pane osd">
+      <span class="ico" data-icon="volume-lg"></span>
+      <span class="pct">42%</span>
+      <span class="lvl"><i></i></span>
+    </div>
+  </div>
+
+  <!-- ================= draggable test button ================= -->
+  <button id="drag-btn" class="pane" title="Kéo thả để test kính trên các vùng nền khác nhau">
+    <span class="grip" data-icon="grip"></span><span>Liquid Glass</span>
+  </button>
+</div>
+
+<button id="toggle" title="Liquid Glass controls" aria-label="Controls">
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+    <path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>
+  </svg>
+</button>
+
+<aside id="controls">
+  <div class="scroll">
+    <h2>Nền</h2>
+    <div id="bgs"></div>
+    <p class="hint">
+      Mặc định là ảnh <b>nhiều chi tiết nhất</b> trong thư viện của bạn — nền phẳng
+      (trắng, ít viền) thì bezel không có gì để bẻ nên không thấy kính.
+      ✓ = nền bạn đang dùng.
+    </p>
+
+    <h2>Màu chữ</h2>
+    <div class="presets" id="inkmode"></div>
+    <p class="hint" id="ink-hint">Auto = đo độ sáng nền dưới từng ô kính rồi chọn chữ tối/sáng.</p>
+
+    <h2>Preset</h2>
+    <div class="presets" id="presets"></div>
+
+    <h2>Lens (archisvaze/liquid-glass)</h2>
+    <label>Thickness <input type="range" id="p-thickness" min="10" max="200" step="1"><span class="vd" id="v-thickness"></span></label>
+    <label>Bezel width <input type="range" id="p-bezel" min="0" max="120" step="1"><span class="vd" id="v-bezel"></span></label>
+    <label>IOR <input type="range" id="p-ior" min="1" max="3" step="0.05"><span class="vd" id="v-ior"></span></label>
+    <label>Scale ratio <input type="range" id="p-scale" min="0" max="2" step="0.05"><span class="vd" id="v-scale"></span></label>
+    <label>Blur <input type="range" id="p-blur" min="0" max="8" step="0.1"><span class="vd" id="v-blur"></span></label>
+    <label>Specular opacity <input type="range" id="p-specOp" min="0" max="1" step="0.05"><span class="vd" id="v-specOp"></span></label>
+    <label>Specular saturate <input type="range" id="p-specSat" min="0" max="12" step="1"><span class="vd" id="v-specSat"></span></label>
+    <label>Tint % <input type="range" id="p-tint" min="0" max="40" step="1"><span class="vd" id="v-tint"></span></label>
+
+    <h2>DEMO_LENS readout</h2>
+    <pre id="readout">…</pre>
+    <p class="hint">
+      <b>refraction</b> = lực hút ở viền (px) mà <code>glass.frag</code> cần để khớp ảnh này;
+      <b>pull</b> = độ dịch thật của bản SVG. Đổi preset rồi so sánh, chốt giá trị rồi mới
+      sửa <code>effects.py</code> / <code>glass.frag</code>.
+    </p>
+  </div>
+</aside>
+
+<svg id="defs" width="0" height="0" color-interpolation-filters="sRGB" style="position:absolute;overflow:hidden">
+  <defs></defs>
+</svg>
+
+<script src="out/liquid-config.js"></script>
+<script>
+/* =========================================================================
+   1. Real shell config (written by tools/liquid_wall.sh)
+   ========================================================================= */
+const CFG = window.LIQUID_CFG || {};
+const R = document.documentElement.style;
+if (CFG.accent) R.setProperty('--accent', CFG.accent);
+if (CFG.accent_fg) R.setProperty('--accent-fg', CFG.accent_fg);
+if (CFG.bar) {
+  R.setProperty('--bar-h', CFG.bar.height + 'px');
+  R.setProperty('--spacing', CFG.bar.spacing + 'px');
+  const m = CFG.bar.margins || {};
+  R.setProperty('--mt', (m.top ?? 8) + 'px');
+  R.setProperty('--mr', (m.right ?? 8) + 'px');
+  R.setProperty('--ml', (m.left ?? 8) + 'px');
+}
+if (CFG.font) {
+  R.setProperty('--font', `"${CFG.font.family}", sans-serif`);
+  R.setProperty('--fw', CFG.font.weight === 'bold' ? 700 : CFG.font.weight === 'semibold' ? 600 : 400);
+  R.setProperty('--bar-size', CFG.font.size + 'pt');
+}
+
+/* =========================================================================
+   2. Icons (16px, currentColor)
+   ========================================================================= */
+const ICON = {
+  wifi: '<path d="M2 6.5a13 13 0 0 1 12 0M4.5 9.5a9 9 0 0 1 7 0M7 12.5a5 5 0 0 1 2 0"/><circle cx="8" cy="15" r="1" fill="currentColor" stroke="none"/>',
+  'wifi-off': '<path d="M3 5.5a13 13 0 0 1 6-2.6M11.5 3.4A13 13 0 0 1 14 6.5M5.5 9.5a9 9 0 0 1 3.5-1.6M8 12.5h.01M2.5 2.5l11 11"/>',
+  bluetooth: '<path d="M5 4.5 11 11 8 13.5V2.5L11 5 5 11.5"/>',
+  'bluetooth-off': '<path d="M5 5.2 6.4 6.6M9.6 6.4 11 5 8 2.5v11l1.8-1.4M3 3l10 10"/>',
+  moon: '<path d="M13 9.8A5.5 5.5 0 0 1 6.2 3a5.5 5.5 0 1 0 6.8 6.8Z"/>',
+  dnd: '<path d="M6 6.6a4.5 4.5 0 0 1 4-2.6c2.2 0 4 1.7 4 3.9v2.6l1.3 2H4.7l1.3-2Z"/><path d="M6.6 13.5a1.5 1.5 0 0 0 2.8 0M2.5 2.5l11 11"/>',
+  sun: '<circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1"/>',
+  volume: '<path d="M3 6.2h2.2L8.6 3.4v9.2L5.2 9.8H3Z"/><path d="M10.6 6a3 3 0 0 1 0 4M12.4 4.2a5.5 5.5 0 0 1 0 7.6"/>',
+  'volume-lg': '<path d="M3 6.2h2.2L8.6 3.4v9.2L5.2 9.8H3Z"/><path d="M10.6 6a3 3 0 0 1 0 4M12.4 4.2a5.5 5.5 0 0 1 0 7.6"/>',
+  battery: '<rect x="1.5" y="5" width="11" height="6" rx="2"/><path d="M14.5 7v2"/><rect x="3" y="6.5" width="6.5" height="3" rx="1" fill="currentColor" stroke="none"/>',
+  idle: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.2"/>',
+  tray: '<rect x="2" y="4" width="12" height="8" rx="2"/><path d="M2 9h12"/>',
+  gear: '<circle cx="8" cy="8" r="2.4"/><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4"/>',
+  lock: '<rect x="3.5" y="7" width="9" height="6.5" rx="2"/><path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7"/>',
+  power: '<path d="M8 2v5.5"/><path d="M4.6 4.6a5 5 0 1 0 6.8 0"/>',
+  prev: '<path d="M5 4v8" stroke-width="2"/><path d="M13 4.3v7.4L6.6 8Z" fill="currentColor" stroke="none"/>',
+  next: '<path d="M11 4v8" stroke-width="2"/><path d="M3 4.3v7.4L9.4 8Z" fill="currentColor" stroke="none"/>',
+  pause: '<rect x="4.2" y="3.5" width="2.6" height="9" rx="1" fill="currentColor" stroke="none"/><rect x="9.2" y="3.5" width="2.6" height="9" rx="1" fill="currentColor" stroke="none"/>',
+  chevron: '<path d="M6 3.5 10.5 8 6 12.5"/>',
+  grip: '<circle cx="6" cy="4" r=".9" fill="currentColor"/><circle cx="10" cy="4" r=".9" fill="currentColor"/><circle cx="6" cy="8" r=".9" fill="currentColor"/><circle cx="10" cy="8" r=".9" fill="currentColor"/><circle cx="6" cy="12" r=".9" fill="currentColor"/><circle cx="10" cy="12" r=".9" fill="currentColor"/>',
+};
+function icon(name, size) {
+  size = size || 16;
+  return `<svg viewBox="0 0 16 16" width="${size}" height="${size}" fill="none" stroke="currentColor"
+    stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block">${ICON[name] || ''}</svg>`;
+}
+document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+
+/* =========================================================================
+   3. Bar modules — same mapping as components.py native_config()
+   ========================================================================= */
+const STATUS = new Set(['idle_inhibitor', 'pulseaudio', 'network', 'battery', 'swaync', 'backlight', 'cpu', 'memory']);
+const LOCALE = (() => {
+  const raw = (CFG.locale || navigator.language || 'en-US').replace(/[.@].*$/, '').replace(/_/g, '-');
+  try { new Intl.DateTimeFormat(raw); return raw; } catch { return undefined; }   // "vi_VN" -> "vi-VN"
+})();
+const fmt = (d, s) => {
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  // %b: glibc's vi_VN says "Thg 10"; CLDR (Intl) says "Tháng 10" - the bar
+  // formats with glibc, so follow it for vi
+  const shortMonth = (LOCALE || '').startsWith('vi')
+    ? `Thg ${d.getMonth() + 1}`
+    : cap(new Intl.DateTimeFormat(LOCALE, { month: 'short' }).format(d));
+  return s.replace(/%[aAbBdHImMpSz]/g, (t) => ({
+    '%a': new Intl.DateTimeFormat(LOCALE, { weekday: 'short' }).format(d),
+    '%A': new Intl.DateTimeFormat(LOCALE, { weekday: 'long' }).format(d),
+    '%b': shortMonth,
+    '%B': cap(new Intl.DateTimeFormat(LOCALE, { month: 'long' }).format(d)),
+    '%d': String(d.getDate()).padStart(2, '0'), '%H': String(d.getHours()).padStart(2, '0'),
+    '%I': String(((d.getHours() + 11) % 12) + 1).padStart(2, '0'), '%M': String(d.getMinutes()).padStart(2, '0'),
+    '%S': String(d.getSeconds()).padStart(2, '0'), '%p': d.getHours() < 12 ? 'AM' : 'PM',
+    '%z': '+0700', '%Z': 'ICT',
+  }[t] ?? t));
+};
+
+function buildBar() {
+  const b = CFG.bar || { modules_left: ['workspaces'], modules_center: ['clock'], modules_right: ['status'] };
+  const left = document.getElementById('bar-left');
+  const center = document.getElementById('bar-center');
+  const right = document.getElementById('bar-right');
+  left.innerHTML = center.innerHTML = right.innerHTML = '';
+
+  if (b.modules_left?.includes('workspaces')) {
+    const p = document.createElement('div');
+    p.className = 'pane pill workspaces';
+    p.innerHTML = [1, 2, 3, 4].map((i) => `<div class="ws${i === 1 ? ' focused' : ''}">${i}</div>`).join('');
+    left.appendChild(p);
+  }
+  if (b.modules_center?.includes('clock')) {
+    const p = document.createElement('div');
+    p.className = 'pane pill clock';
+    const clock = () => { p.textContent = fmt(new Date(), b.clock_format || '%H:%M'); };
+    clock();
+    setInterval(clock, 1000);
+    center.appendChild(p);
+  }
+  const mods = b.modules_right || [];
+  if (mods.some((m) => STATUS.has(m))) {
+    const p = document.createElement('div');
+    p.className = 'pane pill status';
+    const parts = [];
+    if (mods.includes('idle_inhibitor')) parts.push(`<span class="ico" title="Idle inhibitor">${icon('idle')}</span>`);
+    if (mods.includes('network')) parts.push(`<span class="ico" title="Network">${icon('wifi')}</span>`);
+    if (mods.includes('pulseaudio')) parts.push(`<span class="ico" title="Volume">${icon('volume')}</span>`);
+    if (mods.includes('battery')) parts.push(`<span class="ico" title="Battery">${icon('battery')}</span><span class="battery-percent">84%</span>`);
+    p.innerHTML = parts.join('');
+    right.appendChild(p);
+  }
+}
+buildBar();
+
+/* =========================================================================
+   3b. Adaptive text colour — sample the wallpaper (drawn "cover" like #bg)
+       under every glass element, blend in the white tint, pick dark/light ink.
+       file:// wallpapers taint the canvas in Chrome → fall back to light ink
+       (serve tools/ over http, e.g. `python -m http.server`, for Auto).
+   ========================================================================= */
+let inkKey = null, inkSrc = null, inkPx = null, inkW = 0, inkH = 0, inkMode = 'auto', inkTainted = false;
+const INK_SEL = '.pane, .quick-footer button';
+function lumaCanvas(key) {
+  const b = (CFG.bgs || []).find((x) => `file:${x.file}` === key);
+  if (!b || !b.luma) return null;
+  const raw = atob(b.luma), c = document.createElement('canvas');
+  c.width = 160; c.height = 90;
+  const g = c.getContext('2d'), img = g.createImageData(160, 90);
+  for (let i = 0; i < raw.length; i++) {
+    const v = raw.charCodeAt(i);
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+function setInkSource(src) {
+  inkSrc = src;
+  inkPx = null;
+  inkTainted = false;
+  if (src) {
+    const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+    inkW = Math.max(1, Math.round(innerWidth / 4)); inkH = Math.max(1, Math.round(innerHeight / 4));
+    const c = document.createElement('canvas');
+    c.width = inkW; c.height = inkH;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const k = Math.max(inkW / sw, inkH / sh);                  // background-size:cover, centered
+    g.drawImage(src, (inkW - sw * k) / 2, (inkH - sh * k) / 2, sw * k, sh * k);
+      try { inkPx = g.getImageData(0, 0, inkW, inkH).data; } catch { inkTainted = true; }
+  }
+  if (!inkPx && inkKey) {                     // file:// → the grid liquid_wall.sh baked
+    const grid = lumaCanvas(inkKey);
+    if (grid) { inkTainted = false; return setInkSource(grid); }
+  }
+  updateInk();
+}
+let inkTint = () => 6;                                         // set once P exists
+const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+function lumUnder(el) {
+  if (!inkPx) return null;
+  const r = el.getBoundingClientRect();
+  const x0 = Math.max(0, (r.left / 4) | 0), x1 = Math.min(inkW, Math.ceil(r.right / 4));
+  const y0 = Math.max(0, (r.top / 4) | 0), y1 = Math.min(inkH, Math.ceil(r.bottom / 4));
+  let sum = 0, sq = 0, n = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const i = (y * inkW + x) * 4;
+    const l = 0.2126 * lin(inkPx[i]) + 0.7152 * lin(inkPx[i + 1]) + 0.0722 * lin(inkPx[i + 2]);
+    sum += l; sq += l * l; n++;
+  }
+  if (!n) return null;
+  const t = inkTint() / 100;
+  const m = sum / n;
+  return { L: m * (1 - t) + t, sd: Math.sqrt(Math.max(0, sq / n - m * m)) * (1 - t) };  // glass body adds white
+}
+function updateInk() {
+  const hint = document.getElementById('ink-hint');
+  document.querySelectorAll(INK_SEL).forEach((el) => {
+    let k = inkMode === 'dark' ? 1 : 0, h = 0.4;
+    if (inkMode === 'auto') {
+      const r = lumUnder(el);
+      if (r) {
+        // pure black or white only — a grey mix has poor contrast on both
+        // sides. Contrast vs black == vs white at L ≈ 0.179; a small
+        // hysteresis keeps it from flickering while dragging. The cut sits above
+        // 0.179 on purpose: on busy mid-tones white ink + dark halo reads better. The CSS
+        // transition on --k makes the switch glide.
+        const prev = el.dataset.ink === 'dark';
+        k = r.L > (prev ? 0.30 : 0.36) ? 1 : 0;
+        // the closer to the threshold and the busier the texture, the
+        // stronger the halo has to be
+        const near = 1 - Math.min(1, Math.abs(Math.log((r.L + 0.05) / 0.38)) / 1.2);
+        h = Math.min(1, 0.25 + near * 0.6 + r.sd * 3);
+      }
+    }
+    el.dataset.ink = k ? 'dark' : 'light';
+    el.style.setProperty('--k', k);
+    el.style.setProperty('--h', h.toFixed(2));
+  });
+  if (hint) hint.textContent = inkTainted && inkMode === 'auto'
+    ? 'Auto không đọc được ảnh (file://) → dùng chữ sáng + viền tối. Mở qua http để đo nền.'
+    : 'Auto = đo độ sáng nền dưới từng ô kính rồi chọn chữ tối/sáng.';
+}
+(function inkPicker() {
+  const box = document.getElementById('inkmode');
+  [['auto', 'Auto'], ['dark', 'Tối'], ['light', 'Sáng']].forEach(([k, label]) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.dataset.k = k;
+    b.onclick = () => {
+      inkMode = k;
+      box.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.k === k));
+      updateInk();
+    };
+    box.appendChild(b);
+  });
+  box.firstChild.classList.add('on');
+})();
+
+/* =========================================================================
+   4. Background: a picker of every wallpaper (thumbnails) plus a synthetic
+      pattern. Flat wallpapers (white, no edges) have nothing for the bezel to
+      bend, so the default is the busiest one — liquid_wall.sh picks it.
+   ========================================================================= */
+function makePattern() {
+  const c = document.createElement('canvas');
+  c.width = 1600; c.height = 900;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, c.width, c.height);
+  grad.addColorStop(0, '#3b6fd1'); grad.addColorStop(.5, '#c94b8e'); grad.addColorStop(1, '#e8933f');
+  g.fillStyle = grad; g.fillRect(0, 0, c.width, c.height);
+  for (let i = 0; i < 34; i++) {                      // vertical bars
+    g.fillStyle = i % 2 ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.10)';
+    g.fillRect(i * 48, 0, 24, c.height);
+  }
+  g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 2;   // fine grid
+  for (let x = 0; x <= c.width; x += 80) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, c.height); g.stroke(); }
+  for (let y = 0; y <= c.height; y += 80) { g.beginPath(); g.moveTo(0, y); g.lineTo(c.width, y); g.stroke(); }
+  [[420, 300, 210, '#35d07f'], [1180, 640, 260, '#f2e96b'], [1350, 180, 150, '#6aa8ff']].forEach(([x, y, r, col]) => {
+    g.fillStyle = col; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  });
+  g.fillStyle = '#fff'; g.font = '700 64px sans-serif';
+  g.fillText('swayctl liquid glass', 120, 830);
+  return c;
+}
+function setBg(key) {
+  if (key === 'wall') {
+    const cur = (CFG.bgs || []).find((b) => b.current) || (CFG.bgs || [])[0];
+    key = cur ? `file:${cur.file}` : 'pattern';
+  }
+  const bg = document.getElementById('bg');
+  bg.innerHTML = '';
+  bg.style.backgroundImage = '';
+  inkKey = key;
+  if (key === 'pattern') { const c = makePattern(); bg.appendChild(c); setInkSource(c); }
+  else if (key.startsWith('file:')) {
+    const url = `out/bgs/${key.slice(5)}`;
+    bg.style.backgroundImage = `url("${url}")`;
+    const im = new Image();
+    im.onload = () => setInkSource(im);
+    im.onerror = () => setInkSource(null);
+    im.src = url;
+  }
+  else return;                                          // unknown key: keep the old one
+  document.querySelectorAll('#bgs button').forEach((b) => b.classList.toggle('on', b.dataset.bg === key));
+}
+(function picker() {
+  const box = document.getElementById('bgs');
+  const add = (key, label, thumb, current) => {
+    const b = document.createElement('button');
+    b.className = 'bg-thumb' + (current ? ' cur' : '');
+    b.dataset.bg = key;
+    b.title = current ? `${label} — nền hiện tại` : label;
+    const i = document.createElement('img');
+    i.src = thumb; i.alt = '';
+    b.appendChild(i);
+    b.onclick = () => setBg(key);
+    box.appendChild(b);
+  };
+  (CFG.bgs || []).forEach((w) => add(`file:${w.file}`, w.label, `out/bgs/${w.file}`, w.current));
+  add('pattern', 'Pattern (nhiều chi tiết)', makePattern().toDataURL(), false);
+})();
+setBg(new URLSearchParams(location.search).get('bg') || CFG.default_bg || 'pattern');
+
+/* =========================================================================
+   5. archisvaze/liquid-glass — refraction profile + displacement/specular maps
+      Ported from index.html (convex squircle, Snell, SVG filter chain).
+   ========================================================================= */
+const SURFACE_FNS = {
+  convex_squircle: (x) => Math.pow(1 - Math.pow(1 - x, 4), 0.25),
+  convex_circle: (x) => Math.sqrt(1 - (1 - x) * (1 - x)),
+};
+
+function calculateRefractionProfile(glassThickness, bezelWidth, heightFn, ior, samples) {
+  samples = samples || 128;
+  const eta = 1 / ior;
+  function refract(nx, ny) {
+    const dot = ny;
+    const k = 1 - eta * eta * (1 - dot * dot);
+    if (k < 0) return null;
+    const sq = Math.sqrt(k);
+    return [-(eta * dot + sq) * nx, eta - (eta * dot + sq) * ny];
+  }
+  const profile = new Float64Array(samples);
+  for (let i = 0; i < samples; i++) {
+    const x = i / samples;
+    const y = heightFn(x);
+    const dx = x < 1 ? 0.0001 : -0.0001;
+    const y2 = heightFn(x + dx);
+    const deriv = (y2 - y) / dx;
+    const mag = Math.sqrt(deriv * deriv + 1);
+    const ref = refract(-deriv / mag, -1 / mag);
+    if (!ref) { profile[i] = 0; continue; }
+    profile[i] = ref[0] * ((y * bezelWidth + glassThickness) / ref[1]);
+  }
+  return profile;
+}
+
+function generateDisplacementMap(w, h, radius, bezelWidth, profile, maxDisp) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) { d[i] = 128; d[i + 1] = 128; d[i + 2] = 0; d[i + 3] = 255; }
+  const r = radius, rSq = r * r, r1Sq = (r + 1) ** 2;
+  const rBSq = Math.max(r - bezelWidth, 0) ** 2;
+  const wB = w - r * 2, hB = h - r * 2, S = profile.length;
+  for (let y1 = 0; y1 < h; y1++) {
+    for (let x1 = 0; x1 < w; x1++) {
+      const x = x1 < r ? x1 - r : x1 >= w - r ? x1 - r - wB : 0;
+      const y = y1 < r ? y1 - r : y1 >= h - r ? y1 - r - hB : 0;
+      const dSq = x * x + y * y;
+      if (dSq > r1Sq || dSq < rBSq) continue;
+      const dist = Math.sqrt(dSq);
+      const fromSide = r - dist;
+      const op = dSq < rSq ? 1 : 1 - (dist - Math.sqrt(rSq)) / (Math.sqrt(r1Sq) - Math.sqrt(rSq));
+      if (op <= 0 || dist === 0) continue;
+      const cos = x / dist, sin = y / dist;
+      const bi = Math.min(((fromSide / bezelWidth) * S) | 0, S - 1);
+      const disp = profile[bi] || 0;
+      const dX = (-cos * disp) / maxDisp, dY = (-sin * disp) / maxDisp;
+      const idx = (y1 * w + x1) * 4;
+      d[idx] = (128 + dX * 127 * op + 0.5) | 0;
+      d[idx + 1] = (128 + dY * 127 * op + 0.5) | 0;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c.toDataURL();
+}
+
+function generateSpecularMap(w, h, radius, bezelWidth, angle) {
+  angle = angle != null ? angle : Math.PI / 3;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  const d = img.data;
+  d.fill(0);
+  const r = radius, rSq = r * r, r1Sq = (r + 1) ** 2;
+  const rBSq = Math.max(r - bezelWidth, 0) ** 2;
+  const wB = w - r * 2, hB = h - r * 2;
+  const sv = [Math.cos(angle), Math.sin(angle)];
+  for (let y1 = 0; y1 < h; y1++) {
+    for (let x1 = 0; x1 < w; x1++) {
+      const x = x1 < r ? x1 - r : x1 >= w - r ? x1 - r - wB : 0;
+      const y = y1 < r ? y1 - r : y1 >= h - r ? y1 - r - hB : 0;
+      const dSq = x * x + y * y;
+      if (dSq > r1Sq || dSq < rBSq) continue;
+      const dist = Math.sqrt(dSq);
+      const fromSide = r - dist;
+      const op = dSq < rSq ? 1 : 1 - (dist - Math.sqrt(rSq)) / (Math.sqrt(r1Sq) - Math.sqrt(rSq));
+      if (op <= 0 || dist === 0) continue;
+      const cos = x / dist, sin = -y / dist;
+      const dot = Math.abs(cos * sv[0] + sin * sv[1]);
+      const edge = Math.sqrt(Math.max(0, 1 - (1 - fromSide) ** 2));
+      const coeff = dot * edge;
+      const col = (255 * coeff) | 0;
+      const alpha = (col * coeff * op) | 0;
+      const idx = (y1 * w + x1) * 4;
+      d[idx] = col; d[idx + 1] = col; d[idx + 2] = col; d[idx + 3] = alpha;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c.toDataURL();
+}
+
+/* =========================================================================
+   6. Params, presets, rebuild
+   ========================================================================= */
+const P = { thickness: 80, bezel: 60, ior: 3.0, scale: 1.0, blur: 0.3, specOp: 0.5, specSat: 4, tint: 6 };
+const L = document.querySelector('#defs defs');
+inkTint = () => P.tint;
+const DEMO = (CFG.demo_lens) || {};
+const PANE_CSS = {
+  demo: {
+    rim: 'none',
+    in: 'inset 0 0 20px -5px rgba(255,255,255,.45)',
+    out: '0 4px 24px rgba(0,0,0,.18)',
+  },
+  plan: {
+    rim: '1px solid rgba(255,255,255,.30)',
+    in: 'inset 0 0 10px -4px rgba(255,255,255,.45)',
+    out: '0 4px 24px rgba(0,0,0,.18)',
+  },
+  lens: {
+    rim: '1.5px solid rgba(255,255,255,.88)',
+    in: 'inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 1px rgba(0,0,0,.10)',
+    out: '0 2px 10px rgba(0,0,0,.14)',
+  },
+};
+function lensFrom(namespace) {
+  const d = DEMO[namespace];
+  if (!d) return null;
+  return { bezel: d.edge, thickness: d.thickness, refr: d.refraction, specOp: d.highlight, tint: 3.5, css: 'lens' };
+}
+const PRESETS = {
+  'archisvaze demo': { p: { thickness: 80, bezel: 60, ior: 3, scale: 1, blur: 0.3, specOp: 0.5, specSat: 4, tint: 6 }, css: 'demo' },
+  'plan target': { p: { thickness: 80, bezel: 60, ior: 3, scale: 1, blur: 0.3, specOp: 0.5, specSat: 4, tint: 6 }, css: 'plan' },
+  'swayctl now (LENS_*)': lensFrom('swayctl-bar') || { bezel: 12, thickness: 70, refr: 40, specOp: 0.95, tint: 3.5, css: 'lens' },
+  'DEMO_LENS bar': lensFrom('swayctl-bar'),
+  'DEMO_LENS quick': lensFrom('swayctl-quick'),
+  'DEMO_LENS osd': lensFrom('swayctl-osd'),
+  // values you settled on and approved — these go into effects.py / glass.frag
+  'approved': { p: { thickness: 200, bezel: 20, ior: 2.45, scale: 0.8, blur: 0.3, specOp: 0.55, specSat: 3, tint: 3 }, css: 'lens' },
+};
+const REF = { 'swayctl now (LENS_*)': '.clock', 'DEMO_LENS bar': '.clock', 'DEMO_LENS quick': '.tile', 'DEMO_LENS osd': '.osd' };
+
+function paneGeom(pane) {
+  const w = Math.round(pane.offsetWidth), h = Math.round(pane.offsetHeight);
+  if (w < 2 || h < 2) return null;
+  const radius = Math.min(parseFloat(getComputedStyle(pane).borderTopLeftRadius) || 0, w / 2, h / 2);
+  const bezel = Math.min(P.bezel, radius - 1, Math.min(w, h) / 2 - 1);
+  return { w, h, radius, bezel };
+}
+function maxDispFor(geom) {
+  const prof = calculateRefractionProfile(P.thickness, geom.bezel, SURFACE_FNS.convex_squircle, P.ior, 128);
+  let m = 0;
+  for (const v of prof) m = Math.max(m, Math.abs(v));
+  return { prof, maxDisp: m || 1 };
+}
+
+let paneId = 0;
+function rebuild() {
+  L.innerHTML = '';
+  paneId = 0;
+  document.querySelectorAll('.pane').forEach((pane) => {
+    const g = paneGeom(pane);
+    if (!g) return;
+    const { w, h, radius, bezel } = g;
+    const { prof, maxDisp } = maxDispFor(g);
+    const dispUrl = generateDisplacementMap(w, h, radius, bezel, prof, maxDisp);
+    const specUrl = generateSpecularMap(w, h, radius, bezel * 2.5);
+    const id = 'lg' + (paneId++);
+    const f = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+    f.setAttribute('id', id);
+    f.setAttribute('x', '0%'); f.setAttribute('y', '0%');
+    f.setAttribute('width', '100%'); f.setAttribute('height', '100%');
+    f.innerHTML =
+      `<feGaussianBlur in="SourceGraphic" stdDeviation="${P.blur}" result="blurred_source"/>` +
+      `<feImage href="${dispUrl}" x="0" y="0" width="${w}" height="${h}" result="disp_map"/>` +
+      `<feDisplacementMap in="blurred_source" in2="disp_map" scale="${maxDisp * P.scale}" ` +
+      `xChannelSelector="R" yChannelSelector="G" result="displaced"/>` +
+      `<feColorMatrix in="displaced" type="saturate" values="${P.specSat}" result="displaced_sat"/>` +
+      `<feImage href="${specUrl}" x="0" y="0" width="${w}" height="${h}" result="spec_layer"/>` +
+      `<feComposite in="displaced_sat" in2="spec_layer" operator="in" result="spec_masked"/>` +
+      `<feComponentTransfer in="spec_layer" result="spec_faded"><feFuncA type="linear" slope="${P.specOp}"/></feComponentTransfer>` +
+      `<feBlend in="spec_masked" in2="displaced" mode="normal" result="with_sat"/>` +
+      `<feBlend in="spec_faded" in2="with_sat" mode="normal"/>`;
+    L.appendChild(f);
+    pane.style.setProperty('--lg', `url(#${id})`);
+  });
+  readout();
+  updateInk();
+}
+
+/* DEMO_LENS-shaped readout: what effects.py should hold to match this frame */
+function readout() {
+  const rows = [];
+  const one = (name, sel) => {
+    const pane = document.querySelector(sel);
+    if (!pane) return;
+    const g = paneGeom(pane);
+    if (!g) return;
+    const { prof, maxDisp } = maxDispFor(g);
+    const pull = (maxDisp * P.scale) / 2;                       // svg rim displacement
+    const denom = Math.max(P.thickness * 1.05 + g.bezel * 0.35, 1);
+    const fieldRim = prof[0] / denom;                           // glass.frag field at the rim
+    const refr = fieldRim > 0.01 ? pull / fieldRim : 0;
+    rows.push(
+      `${name}\n  ${JSON.stringify({
+        edge: Math.round(g.bezel), thickness: Math.round(P.thickness),
+        refraction: Math.round(refr), highlight: +P.specOp.toFixed(2),
+      })}\n  pull≈${pull.toFixed(1)}px  maxDisp=${maxDisp.toFixed(0)}  scale=${P.scale.toFixed(2)}`,
+    );
+  };
+  one('swayctl-bar', REF['DEMO_LENS bar']);
+  one('swayctl-quick', REF['DEMO_LENS quick']);
+  one('swayctl-osd', REF['DEMO_LENS osd']);
+  document.getElementById('readout').textContent = rows.join('\n\n');
+}
+
+function syncSliders() {
+  for (const k of ['thickness', 'bezel', 'ior', 'scale', 'blur', 'specOp', 'specSat', 'tint']) {
+    const el = document.getElementById('p-' + k);
+    if (!el) continue;
+    el.value = P[k];
+    document.getElementById('v-' + k).textContent =
+      k === 'ior' || k === 'scale' ? (+P[k]).toFixed(2) : k === 'blur' ? (+P[k]).toFixed(1) :
+      k === 'specOp' ? (+P[k]).toFixed(2) : k === 'tint' ? P[k] + '%' : P[k];
+  }
+}
+function applyCss(cssKey) {
+  const c = PANE_CSS[cssKey] || PANE_CSS.demo;
+  R.setProperty('--rim', c.rim);
+  R.setProperty('--in', c.in);
+  R.setProperty('--out', c.out);
+}
+function applyPreset(name) {
+  const pr = PRESETS[name];
+  if (!pr) return;
+  Object.assign(P, { thickness: 80, bezel: 60, ior: 3, scale: 1, blur: 0.3, specOp: 0.5, specSat: 4, tint: 6 }, pr.p || {});
+  applyCss(pr.css || 'demo');
+  if (pr.refr != null) {                 // target rim pull in px → scale ratio
+    const sel = REF[name];
+    const pane = sel && document.querySelector(sel);
+    if (pane) {
+      const g = paneGeom(pane);
+      if (g) {
+        const { maxDisp } = maxDispFor(g);
+        P.scale = Math.min(2, Math.max(0, (2 * pr.refr) / maxDisp));
+      }
+    }
+  }
+  document.querySelectorAll('#presets button').forEach((b) => b.classList.toggle('on', b.textContent === name));
+  syncSliders();
+  rebuild();
+}
+
+/* controls */
+const presetsEl = document.getElementById('presets');
+Object.keys(PRESETS).filter((k) => PRESETS[k]).forEach((name) => {
+  const b = document.createElement('button');
+  b.textContent = name;
+  b.onclick = () => applyPreset(name);
+  presetsEl.appendChild(b);
+});
+for (const k of ['thickness', 'bezel', 'ior', 'scale', 'blur', 'specOp', 'specSat', 'tint']) {
+  const el = document.getElementById('p-' + k);
+  el.addEventListener('input', () => { P[k] = +el.value; syncSliders(); rebuild(); });
+}
+document.getElementById('toggle').onclick = () => setPanel(!document.getElementById('controls').classList.contains('open'));
+function setPanel(open) {
+  document.getElementById('controls').classList.toggle('open', open);
+  document.body.classList.toggle('panel-open', open);
+}
+
+let rt;
+addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { setInkSource(inkSrc); rebuild(); }, 150); });
+
+/* draggable glass button — the filter depends only on size, so moving it just
+   re-samples the ink colour */
+(function dragBtn() {
+  const btn = document.getElementById('drag-btn');
+  let dx = 0, dy = 0, moved = false, raf = 0;
+  btn.addEventListener('pointerdown', (e) => {
+    const r = btn.getBoundingClientRect();
+    dx = e.clientX - r.left; dy = e.clientY - r.top; moved = false;
+    btn.setPointerCapture(e.pointerId);
+    btn.classList.add('dragging');
+  });
+  btn.addEventListener('pointermove', (e) => {
+    if (!btn.hasPointerCapture(e.pointerId)) return;
+    moved = true;
+    const x = Math.min(Math.max(0, e.clientX - dx), innerWidth - btn.offsetWidth);
+    const y = Math.min(Math.max(0, e.clientY - dy), innerHeight - btn.offsetHeight);
+    btn.style.left = x + 'px'; btn.style.top = y + 'px';
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(updateInk);
+  });
+  const end = (e) => {
+    if (btn.hasPointerCapture(e.pointerId)) btn.releasePointerCapture(e.pointerId);
+    btn.classList.remove('dragging');
+    updateInk();
+  };
+  btn.addEventListener('pointerup', end);
+  btn.addEventListener('pointercancel', end);
+  btn.addEventListener('click', (e) => { if (moved) e.preventDefault(); });
+})();
+
+const QP = new URLSearchParams(location.search);
+setPanel(QP.get('panel') === '1');
+applyPreset(QP.get('preset') || 'archisvaze demo');
+// single-value overrides, e.g. ?preset=approved&sat=1 — for diffing one effect
+const NUMP = { thick: 'thickness', bezel: 'bezel', ior: 'ior', scale: 'scale',
+               blur: 'blur', specop: 'specOp', sat: 'specSat', tint: 'tint' };
+let overridden = false;
+for (const [q, k] of Object.entries(NUMP)) {
+  if (QP.has(q)) { P[k] = +QP.get(q); overridden = true; }
+}
+if (overridden) { syncSliders(); rebuild(); }
+addEventListener('load', () => setTimeout(rebuild, 60));   // after the wallpaper settles
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+#%PAM-1.0
+# a finger "matched" after 3 s
+auth required pam_exec.so quiet /usr/bin/sleep 3
+auth required pam_permit.so
+account required pam_permit.so
