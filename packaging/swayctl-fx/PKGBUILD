@@ -16,10 +16,17 @@ license=(MIT)
 depends=(sway 'wlroots0.20' cairo pango json-c libinput libxkbcommon pixman pcre2 gdk-pixbuf2
          libglvnd libdrm)
 makedepends=(git meson ninja wayland-protocols)
-# Local clones by default; point these at your published forks to build elsewhere.
-_fx="${SWAYCTL_FX_DIR:-$startdir/../../../swayctl-fx}"
-source=("swayfx::git+file://$_fx/swayfx#branch=swayctl"
-        "scenefx::git+file://$_fx/scenefx#branch=swayctl"
+# The published forks (branch swayctl) by default; SWAYCTL_FX_DIR=<dir with
+# swayfx/ and scenefx/ clones> builds local, unpushed work instead.
+if [ -n "${SWAYCTL_FX_DIR:-}" ]; then
+  _swayfx="git+file://$SWAYCTL_FX_DIR/swayfx"
+  _scenefx="git+file://$SWAYCTL_FX_DIR/scenefx"
+else
+  _swayfx="git+https://github.com/nguyen-tan-huy/swayfx-liquid-glass.git"
+  _scenefx="git+https://github.com/nguyen-tan-huy/scenefx-liquid-glass.git"
+fi
+source=("swayfx::$_swayfx#branch=swayctl"
+        "scenefx::$_scenefx#branch=swayctl"
         swayctl-fx.desktop)
 sha256sums=(SKIP SKIP SKIP)
 
