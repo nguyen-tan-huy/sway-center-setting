@@ -53,6 +53,26 @@ def session_path() -> str | None:
     return None
 
 
+def from_other_session(unit: str) -> bool:
+    """The unit's main process was started for another sway session (its
+    SWAYSOCK isn't ours): a unit left running from the last login. Apps it
+    starts (the launcher's) would inherit that dead socket and display."""
+    ours = os.environ.get("SWAYSOCK")
+    if not ours:
+        return False
+    pid = _systemctl("show", unit, "-p", "MainPID", "--value").stdout.strip()
+    if not pid.isdigit() or pid == "0":
+        return False
+    try:
+        env = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    for item in env:
+        if item.startswith(b"SWAYSOCK="):
+            return item.split(b"=", 1)[1].decode(errors="replace") != ours
+    return True  # started without one: not from this session either
+
+
 def installed(program: str) -> bool:
     """Whether `program` can be found on the sway session's PATH."""
     import shutil

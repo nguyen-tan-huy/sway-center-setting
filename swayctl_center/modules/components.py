@@ -424,6 +424,11 @@ class Component:
                 continue
             desc = f"swayctl-center {self.name}: {shlex.join(argv)}"
             st = units.state(unit)
+            if st.active and units.from_other_session(unit):
+                # left running from the last login: its environment (and so
+                # everything it opens) points at a sway that's gone
+                units.stop(unit)
+                st = units.state(unit)
             if st.active and st.description == desc:
                 if files_changed:
                     self.reload(unit)

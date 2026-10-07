@@ -158,6 +158,29 @@ class ClipboardPickerTest(unittest.TestCase):
             self.assertEqual(clipboard.pipeline("clear"), "cliphist wipe")
 
 
+class StaleSessionUnitTest(unittest.TestCase):
+    """A unit still running from the last login is restarted, not reused."""
+
+    def test_other_session_is_detected_from_the_main_process_env(self):
+        from swayctl_center import units
+        with tempfile.TemporaryDirectory() as d:
+            env = Path(d) / "environ"
+            env.write_bytes(b"PATH=/usr/bin\0SWAYSOCK=/run/user/1000/sway-ipc.1000.111.sock\0")
+            real_path = Path
+            with mock.patch.dict(os.environ, {"SWAYSOCK": "/run/user/1000/sway-ipc.1000.222.sock"}), \
+                    mock.patch.object(units, "_systemctl", return_value=mock.Mock(stdout="4242\n")), \
+                    mock.patch.object(units, "Path", side_effect=lambda p: env if "environ" in str(p) else real_path(p)):
+                self.assertTrue(units.from_other_session("x.service"))
+            with mock.patch.dict(os.environ, {"SWAYSOCK": "/run/user/1000/sway-ipc.1000.111.sock"}), \
+                    mock.patch.object(units, "_systemctl", return_value=mock.Mock(stdout="4242\n")), \
+                    mock.patch.object(units, "Path", side_effect=lambda p: env if "environ" in str(p) else real_path(p)):
+                self.assertFalse(units.from_other_session("x.service"))
+            # not running: nothing to say
+            with mock.patch.dict(os.environ, {"SWAYSOCK": "/x"}), \
+                    mock.patch.object(units, "_systemctl", return_value=mock.Mock(stdout="0\n")):
+                self.assertFalse(units.from_other_session("x.service"))
+
+
 class NativeLauncherTest(unittest.TestCase):
     """swayctl-bar's Spotlight over elephant (launcher.program = swayctl-bar)."""
 
