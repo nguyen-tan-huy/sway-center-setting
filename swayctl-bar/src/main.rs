@@ -26,7 +26,6 @@ struct State {
     dir: PathBuf,
     svc: Rc<services::Services>,
     quick: Rc<ui::quick::QuickSettings>,
-    calendar: Rc<ui::calendar::CalendarPopup>,
     osd: Rc<ui::osd::Osd>,
     launcher: Rc<ui::launcher::Launcher>,
     popups: Option<Rc<ui::notify::Popups>>,
@@ -50,7 +49,7 @@ impl State {
         let mut bars = Vec::new();
         for i in 0..monitors.n_items() {
             if let Some(m) = monitors.item(i).and_downcast::<gdk::Monitor>() {
-                let w = ui::bar::build(app, &m, &cfg, &self.svc, &self.quick, &self.calendar);
+                let w = ui::bar::build(app, &m, &cfg, &self.svc, &self.quick);
                 w.present();
                 bars.push(w);
             }
@@ -115,7 +114,6 @@ fn main() -> glib::ExitCode {
             let s = Rc::new(State {
                 popups,
                 quick: ui::quick::QuickSettings::new(app, &svc, &cfg),
-                calendar: ui::calendar::CalendarPopup::new(app),
                 osd: ui::osd::Osd::new(app),
                 launcher: ui::launcher::Launcher::new(app, &cfg.launcher),
                 dir,
@@ -176,6 +174,23 @@ fn main() -> glib::ExitCode {
             ["launcher", text @ ..] => {
                 if let Some(m) = s.focused_monitor() {
                     s.launcher.open_with(&m, &text.join(" "));
+                }
+            }
+            // `tray-menu [n]`: the menu of the nth tray icon (from 1) on the
+            // focused output's bar, as a click on it would open it
+            ["tray-menu", n @ ..] => {
+                let n: usize = n.first().and_then(|n| n.parse().ok()).unwrap_or(1).max(1);
+                let out = s.focused_monitor().and_then(|m| m.connector()).map(|c| c.to_string());
+                for w in app.windows() {
+                    let on = w.surface().and_then(|sf| WidgetExt::display(&w).monitor_at_surface(&sf))
+                        .and_then(|m| m.connector()).map(|c| c.to_string());
+                    if out.is_some() && on != out {
+                        continue;
+                    }
+                    if let Some(b) = ui::bar::tray_button_at(&w, n) {
+                        b.emit_clicked();
+                        break;
+                    }
                 }
             }
             ["dnd", what, ..] => {

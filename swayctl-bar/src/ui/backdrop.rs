@@ -489,7 +489,7 @@ pub fn layer_origin(monitor: &gdk::Monitor, namespace: &str) -> Option<(f32, f32
 
 /// A pane of glass in a popup: tagged as a whole (its contents follow).
 fn is_pane(w: &gtk::Widget) -> bool {
-    const PANES: [&str; 9] = ["tile", "slider-row", "media", "notification-card", "calendar-panel",
+    const PANES: [&str; 8] = ["tile", "slider-row", "media", "notification-card",
                               "circular", "pane", "notification-action", "osd"];
     if PANES.iter().any(|c| w.has_css_class(c)) || w.css_name() == "headerbar" {
         return true;

@@ -14,8 +14,7 @@ from . import Context
 
 # layer-shell namespaces of the panels we run
 PANEL_NAMESPACES = ("waybar", "swayctl-bar", "swayctl-quick", "swayctl-osd", "swayctl-notifications",
-                    "swayctl-launcher",
-                    "swayctl-calendar",
+                    "swayctl-launcher", "swayctl-traymenu",
                     "swaync-control-center",
                     "swaync-notification-window", "walker", "launcher")
 # swayctl-bar's own surfaces: glass-ready (they fill the surface exactly), with
@@ -30,15 +29,15 @@ GLASS_RADIUS = {"swayctl-osd": 22}
 # alpha), not the surface's box. Notifications (cards inside one big
 # transparent surface) and Quick Settings, whose panel is invisible: each
 # tile, slider and button is its own pane of glass.
-SHAPED = ("swayctl-bar", "swayctl-quick", "swayctl-launcher", "swayctl-notifications", "swayctl-calendar", "walker", "swaync-control-center", "swaync-notification-window")
+SHAPED = ("swayctl-bar", "swayctl-quick", "swayctl-traymenu", "swayctl-launcher", "swayctl-notifications", "walker", "swaync-control-center", "swaync-notification-window")
 # Of those, the ones whose surface box is *bigger* than what's drawn (cards
 # floating inside one transparent surface): a compositor box shadow there
 # would ring the whole surface, so it stays off. The bar and Quick Settings
 # fill their surface exactly, but their box shadow read as a halo under the
 # pills / around the panel — off by request.
-CARD_SURFACE = ("swayctl-notifications", "swayctl-calendar", "walker",
+CARD_SURFACE = ("swayctl-notifications", "walker",
                 "swaync-control-center", "swaync-notification-window")
-NO_SHADOW = CARD_SURFACE + ("swayctl-quick", "swayctl-bar", "swayctl-launcher")
+NO_SHADOW = CARD_SURFACE + ("swayctl-quick", "swayctl-traymenu", "swayctl-bar", "swayctl-launcher")
 # these panels draw their own corners in CSS; the compositor's corner_radius
 # (rounded blur region, rounded shadow) must match them — the blur radius is
 # 0 in glass mode, so it can't be the source of truth there
@@ -59,7 +58,7 @@ def _onoff(b: bool) -> str:
 
 # pick light or dark text per pane themselves (swayctl-bar, from what's behind):
 # the compositor mustn't push their glass toward the theme's text
-ADAPTIVE = ("swayctl-bar", "swayctl-quick", "swayctl-osd", "swayctl-launcher", "swayctl-notifications", "swayctl-calendar")
+ADAPTIVE = ("swayctl-bar", "swayctl-quick", "swayctl-traymenu", "swayctl-osd", "swayctl-launcher", "swayctl-notifications")
 
 # swayctl-center's own window (it draws only panes, the rest is clear)
 SETTINGS_APP_ID = "io.github.huyhappy.SwayctlCenter.Settings"
@@ -76,7 +75,7 @@ GLASS_APP_TEXT = {SETTINGS_APP_ID: "none", "chosua": "light"}
 # colour and the compositor inks it light or dark from what's behind the glass
 # (`glass text auto`); they ask nothing (no GET_BACKDROP) and pick nothing
 INK_APPS = ("chosua",)
-INK_LAYERS = ("swayctl-bar", "swayctl-quick")
+INK_LAYERS = ("swayctl-bar", "swayctl-quick", "swayctl-traymenu")
 
 
 class EffectsModule:

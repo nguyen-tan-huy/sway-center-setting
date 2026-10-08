@@ -80,11 +80,12 @@ class NativeNotificationsTest(unittest.TestCase):
         self.assertIn("white", _text_shadow(themes.BUILTIN["light"].tokens))        # black text, light glow
         self.assertIn("black", _text_shadow(themes.BUILTIN["dark"].tokens))
 
-    def test_calendar_is_glass(self):
-        self.assertIn("swayctl-calendar", SHAPED)
+    def test_no_calendar(self):
+        # the clock has no calendar popup: no glass or styles left for it
+        self.assertNotIn("swayctl-calendar", SHAPED)
         c = ctx()
         c.values["effects"]["glass"] = True
-        self.assertIn("one clear lens pane", BarModule().native_css(c, themes.BUILTIN["dark"]))
+        self.assertNotIn("calendar-panel", BarModule().native_css(c, themes.BUILTIN["dark"]))
 
     def test_settings_app_glass_css(self):
         from swayctl_center.modules.components import app_glass_css, milk_fill

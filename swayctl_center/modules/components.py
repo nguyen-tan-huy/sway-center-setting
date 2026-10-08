@@ -747,10 +747,6 @@ window.bar {{ background: {bar_bg}; color: {text}; border-radius: {radius}px; {b
 .notification-card {{ background: {panel_bg}; color: {text}; border-color: {panel_border};
   border-radius: {k['radius_lg'] + 6 if modern else k['radius_md']}px; font-size: {size}pt; }}
 .notification-card.critical {{ border-color: {k['error']}; }}
-.calendar-panel {{ background: {panel_bg}; color: {text}; border-color: {panel_border};
-  border-radius: {k['radius_lg'] + 6 if modern else k['radius_md']}px; font-size: {size}pt; }}
-.calendar-panel calendar > grid > label:selected {{ background: {k['accent']}; color: {k['accent_fg']}; }}
-.calendar-panel calendar > grid > label.today {{ box-shadow: inset 0 0 0 1px {k['accent']}; }}
 """ + (self.glass_css(k, milk_opacity(ctx, t)) if glass else "")
 
     @staticmethod
@@ -822,6 +818,15 @@ window.quick-window, window.quick-catcher {{ background: none; background-color:
   color: {MILK_TEXT};
 }}
 .slider-row image, .slider-row button {{ color: {MILK_TEXT}; }}
+/* a tray item's menu: one pane of glass under the icon */
+.tray-menu {{
+  background: {body};
+  border: {rim};
+  box-shadow: {inset};
+  border-radius: 22px;
+  color: {MILK_TEXT};
+}}
+.tray-menu label, .tray-menu image {{ color: {MILK_TEXT}; }}
 .quick-panel headerbar {{
   background: {body}; border-radius: 999px; margin-bottom: 8px;
   border: {rim}; box-shadow: {inset};
@@ -919,23 +924,6 @@ scale slider {{ background: white; box-shadow: 0 0 0 1px alpha(black, 0.12), 0 1
 }}
 .quick-notifications .notification-card {{
   background: {body};
-}}
-/* calendar under the clock: one clear lens pane */
-.calendar-panel {{
-  background: {body};
-  border: {rim};
-  box-shadow: {inset}, inset 0 0 0 1px alpha(white, 0.08);
-  color: {MILK_TEXT};
-}}
-.calendar-panel label {{ text-shadow: none; color: {MILK_TEXT}; }}
-.calendar-panel calendar > header button {{
-  background: alpha(black, 0.08); border-radius: 999px; min-width: 28px; min-height: 28px;
-  color: {MILK_TEXT};
-}}
-.calendar-panel calendar > grid > label.day-number:hover {{ background: alpha(black, 0.08); }}
-.calendar-panel calendar > grid > label.today {{ box-shadow: inset 0 0 0 1px {k['accent']}; }}
-.calendar-panel calendar > grid > label:selected {{
-  background: {k['accent']}; color: {k['accent_fg']};
 }}
 """
 

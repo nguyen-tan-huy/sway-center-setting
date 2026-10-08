@@ -2,9 +2,9 @@
 
 use crate::config::Config;
 use crate::services::{procs, sway, tray, Services};
-use crate::ui::{calendar::CalendarPopup, icons, quick::QuickSettings};
+use crate::ui::{icons, quick::QuickSettings};
 use gtk::prelude::*;
-use gtk::{gdk, gio, glib};
+use gtk::{gdk, glib};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -12,7 +12,7 @@ use std::rc::Rc;
 pub const NAMESPACE: &str = "swayctl-bar";
 
 pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: &Rc<Services>,
-             quick: &Rc<QuickSettings>, calendar: &Rc<CalendarPopup>) -> gtk::ApplicationWindow {
+             quick: &Rc<QuickSettings>) -> gtk::ApplicationWindow {
     let win = gtk::ApplicationWindow::builder().application(app).css_classes(["bar"]).build();
     win.init_layer_shell();
     win.set_namespace(Some(NAMESPACE));
@@ -54,7 +54,7 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
     let side = |names: &[String], class: &str| {
         let b = gtk::Box::builder().orientation(orientation).spacing(cfg.spacing).css_classes([class]).build();
         for name in names {
-            if let Some(w) = module(name, cfg, svc, quick, calendar, &output, monitor) {
+            if let Some(w) = module(name, cfg, svc, quick, &output, monitor) {
                 w.add_css_class("module");
                 b.append(&w);
             }
@@ -136,7 +136,7 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
     win
 }
 
-fn module(name: &str, cfg: &Config, svc: &Rc<Services>, quick: &Rc<QuickSettings>, calendar: &Rc<CalendarPopup>, output: &str,
+fn module(name: &str, cfg: &Config, svc: &Rc<Services>, quick: &Rc<QuickSettings>, output: &str,
           monitor: &gdk::Monitor) -> Option<gtk::Widget> {
     Some(match name {
         "workspaces" => workspaces(svc, output).upcast(),
@@ -156,7 +156,7 @@ fn module(name: &str, cfg: &Config, svc: &Rc<Services>, quick: &Rc<QuickSettings
             svc.sway.state.subscribe(move |s| l2.set_label(&s.title));
             l.upcast()
         }
-        "clock" => clock(cfg, calendar, monitor).upcast(),
+        "clock" => clock(cfg).upcast(),
         "status" => status(svc, quick, monitor).upcast(),
         "tray" => tray(svc)?.upcast(),
         _ => {
@@ -200,12 +200,9 @@ fn workspaces(svc: &Rc<Services>, output: &str) -> gtk::Box {
     b
 }
 
-fn clock(cfg: &Config, calendar: &Rc<CalendarPopup>, monitor: &gdk::Monitor) -> gtk::Button {
+fn clock(cfg: &Config) -> gtk::Button {
     let label = gtk::Label::new(None);
     let btn = gtk::Button::builder().child(&label).css_classes(["clock", "flat"]).build();
-    // the calendar is a glass popup of its own (see ui/calendar.rs)
-    let (cal, m, c) = (calendar.clone(), monitor.clone(), cfg.clone());
-    btn.connect_clicked(move |b| cal.toggle(&m, b.upcast_ref(), &c));
     let (fmt, alt) = (cfg.clock_format.clone(), cfg.clock_format_alt.clone());
     let seconds = fmt.contains("%S") || fmt.contains("%T") || fmt.contains("%r");
     let tick = {
@@ -289,6 +286,29 @@ fn status(svc: &Rc<Services>, quick: &Rc<QuickSettings>, monitor: &gdk::Monitor)
     btn
 }
 
+/// The nth (from 1) tray icon's button in a bar window, if it has that many.
+pub fn tray_button_at(win: &gtk::Window, n: usize) -> Option<gtk::Button> {
+    fn find(w: &gtk::Widget) -> Option<gtk::Widget> {
+        if w.has_css_class("tray") {
+            return Some(w.clone());
+        }
+        let mut c = w.first_child();
+        while let Some(x) = c {
+            if let Some(f) = find(&x) {
+                return Some(f);
+            }
+            c = x.next_sibling();
+        }
+        None
+    }
+    let tray = find(win.upcast_ref())?;
+    let mut c = tray.first_child();
+    for _ in 1..n {
+        c = c?.next_sibling();
+    }
+    c.and_downcast::<gtk::Button>()
+}
+
 fn tray(svc: &Rc<Services>) -> Option<gtk::Box> {
     let tray = svc.tray.clone()?;
     let b = gtk::Box::builder().css_classes(["tray"]).spacing(2).build();
@@ -361,57 +381,7 @@ fn show_tray_menu(tray: &Rc<tray::Tray>, item: &tray::Item, anchor: &gtk::Button
             tray.call(&item, "ContextMenu"); // no dbusmenu: let the app show its own
             return;
         };
-        let actions = gio::SimpleActionGroup::new();
-        let act = gio::SimpleAction::new("item", Some(glib::VariantTy::INT32));
-        let (t2, it2) = (tray.clone(), item.clone());
-        act.connect_activate(move |_, v| {
-            if let Some(id) = v.and_then(|v| v.get::<i32>()) {
-                t2.menu_event(&it2, id);
-            }
-        });
-        actions.add_action(&act);
-        let pop = gtk::PopoverMenu::from_model(Some(&menu_model(&root)));
-        pop.insert_action_group("tray", Some(&actions));
-        pop.set_parent(&anchor);
-        pop.set_has_arrow(false);
-        pop.connect_closed(|p| {
-            let p = p.clone();
-            glib::idle_add_local_once(move || p.unparent());
-        });
-        pop.popup();
+        crate::ui::traymenu::show(&tray, &item, &root, anchor.upcast_ref());
     });
 }
 
-fn menu_model(node: &tray::MenuNode) -> gio::Menu {
-    let menu = gio::Menu::new();
-    let mut section = gio::Menu::new();
-    for child in &node.children {
-        if child.separator {
-            if section.n_items() > 0 {
-                menu.append_section(None, &section);
-                section = gio::Menu::new();
-            }
-            continue;
-        }
-        let label = match child.toggle {
-            Some(true) => format!("✓ {}", child.label),
-            Some(false) => format!("   {}", child.label),
-            None => child.label.clone(),
-        };
-        if !child.children.is_empty() {
-            section.append_submenu(Some(&label), &menu_model(child));
-        } else {
-            let mi = gio::MenuItem::new(Some(&label), None);
-            if child.enabled {
-                mi.set_action_and_target_value(Some("tray.item"), Some(&child.id.to_variant()));
-            } else {
-                mi.set_action_and_target_value(Some("tray.disabled"), None); // no such action: greyed out
-            }
-            section.append_item(&mi);
-        }
-    }
-    if section.n_items() > 0 {
-        menu.append_section(None, &section);
-    }
-    menu
-}

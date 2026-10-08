@@ -2,7 +2,7 @@
 # The bar, Quick Settings and OSD for swayctl-center (Desktop > Bar > Bar program).
 pkgname=swayctl-bar
 pkgver=0.1.0
-pkgrel=14
+pkgrel=15
 pkgdesc="GPU-rendered bar with Quick Settings, notifications and OSD, and a lock screen with fingerprint unlock, for swayctl-center"
 arch=(x86_64)
 url="https://github.com/huyhappy/swayctl-center"
