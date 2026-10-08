@@ -17,12 +17,15 @@ c = cairo.Context(s)
 g = cairo.LinearGradient(0, 0, 3072, 1920)
 g.add_color_stop_rgb(0, 0.93, 0.16, 0.42); g.add_color_stop_rgb(0.5, 0.98, 0.70, 0.15); g.add_color_stop_rgb(1, 0.10, 0.45, 0.95)
 c.set_source(g); c.paint()
+import os
+if os.environ.get("WALL") == "dark":
+    c.set_source_rgb(0.07, 0.08, 0.16); c.paint()
 s.write_to_png("/tmp/wall.png")
 PY
 swaymsg 'output * bg /tmp/wall.png fill' >/dev/null
 # the user's effects, one command per line
 # (the tray menu takes Quick Settings' glass, as a regenerated config gives it)
-{ cat /tmp/out/gen/swayctl-fx.conf; grep '"swayctl-quick"' /tmp/out/gen/swayctl-fx.conf | sed 's/"swayctl-quick"/"swayctl-traymenu"/'; } \
+{ cat /tmp/out/gen/swayctl-fx.conf; grep '"swayctl-quick"' /tmp/out/gen/swayctl-fx.conf | sed 's/"swayctl-quick"/"swayctl-traymenu"/'; echo 'layer_effects "swayctl-launcher" "glass_text auto"'; } \
   | grep -v '^\s*#' | grep -v '^\s*$' | while IFS= read -r l; do swaymsg -- "$l" >/dev/null 2>&1 || true; done
 mkdir -p "$HOME/.config/swayctl-center"
 cp /tmp/out/settings.json "$HOME/.config/swayctl-center/settings.json" 2>/dev/null || true

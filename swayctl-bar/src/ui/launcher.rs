@@ -582,9 +582,12 @@ impl Launcher {
         self.opened.set(self.opened.get().wrapping_add(1));
         *self.monitor.borrow_mut() = Some(monitor.clone());
         // before anything of ours is on screen: what will be behind it
-        let grid = backdrop::Grid::capture(monitor).map(Rc::new);
+        // (unless the compositor inks the text itself: then nothing is read)
+        let ink = backdrop::compositor_ink();
+        let grid = if ink { None } else { backdrop::Grid::capture(monitor).map(Rc::new) };
 
         let win = gtk::Window::builder().application(&self.app).css_classes(["launcher-window"]).build();
+        backdrop::set_key_ink(&win, ink);
         win.init_layer_shell();
         win.set_namespace(Some(NAMESPACE));
         win.set_monitor(Some(monitor));
@@ -748,6 +751,9 @@ impl Launcher {
 
     /// Light or dark ink per pane by what's behind it.
     fn retag(&self) {
+        if backdrop::compositor_ink() {
+            return; // the compositor inks the text
+        }
         let (Some(win), Some(card)) = (self.win.borrow().clone(), self.widgets.borrow().as_ref().map(|w| w.card.clone())) else { return };
         let Some(grid) = BACKDROP.with(|b| b.borrow().clone()) else { return };
         let origin = self.monitor.borrow().as_ref()
@@ -758,6 +764,9 @@ impl Launcher {
     /// While open: what's behind, from the compositor's glass probe (the
     /// launcher's own text left out), like Quick Settings.
     fn follow_backdrop(&self) {
+        if backdrop::compositor_ink() {
+            return; // the compositor inks the text: nothing to follow
+        }
         let generation = self.opened.get();
         let weak = self.self_weak();
         glib::timeout_add_local(std::time::Duration::from_millis(250), move || {

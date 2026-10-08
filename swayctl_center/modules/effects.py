@@ -75,7 +75,7 @@ GLASS_APP_TEXT = {SETTINGS_APP_ID: "none", "chosua": "light"}
 # colour and the compositor inks it light or dark from what's behind the glass
 # (`glass text auto`); they ask nothing (no GET_BACKDROP) and pick nothing
 INK_APPS = ("chosua",)
-INK_LAYERS = ("swayctl-bar", "swayctl-quick", "swayctl-traymenu")
+INK_LAYERS = ("swayctl-bar", "swayctl-quick", "swayctl-traymenu", "swayctl-launcher")
 
 
 class EffectsModule:
