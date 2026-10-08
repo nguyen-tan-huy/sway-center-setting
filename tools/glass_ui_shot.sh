@@ -22,7 +22,7 @@ if os.environ.get("WALL") == "dark":
     c.set_source_rgb(0.07, 0.08, 0.16); c.paint()
 s.write_to_png("/tmp/wall.png")
 PY
-swaymsg 'output * bg /tmp/wall.png fill' >/dev/null
+if [ -n "${WALLFILE:-}" ]; then swaymsg "output * bg $WALLFILE fill" >/dev/null; else swaymsg 'output * bg /tmp/wall.png fill' >/dev/null; fi
 # the user's effects, one command per line
 # (the tray menu takes Quick Settings' glass, as a regenerated config gives it)
 { cat /tmp/out/gen/swayctl-fx.conf; grep '"swayctl-quick"' /tmp/out/gen/swayctl-fx.conf | sed 's/"swayctl-quick"/"swayctl-traymenu"/'; echo 'layer_effects "swayctl-launcher" "glass_text auto"'; } \
@@ -38,6 +38,11 @@ $bin tray-menu 1
 sleep 1.5
 grim /tmp/out/ui-traymenu.png
 $bin tray-menu 1   # opens again (a new one replaces it)
+sleep 1
+$bin quick
+sleep 2
+grim /tmp/out/ui-quick.png
+$bin quick
 sleep 1
 $bin launcher
 sleep 2.5
