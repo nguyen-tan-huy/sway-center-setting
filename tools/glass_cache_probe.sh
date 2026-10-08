@@ -29,7 +29,7 @@ for x, y, r, col in ((2650, 260, 190, (0.2, 0.9, 0.6)), (500, 1110, 330, (1, 0.9
     c.set_source_rgb(*col); c.arc(x, y, r, 0, 2 * math.pi); c.fill()
 s.write_to_png("/tmp/wall.png")
 PY
-swaymsg 'output * bg /tmp/wall.png fill' >/dev/null
+if [ -n "${WALLFILE:-}" ]; then swaymsg "output * bg $WALLFILE fill" >/dev/null; else swaymsg 'output * bg /tmp/wall.png fill' >/dev/null; fi
 swaymsg "blur_passes ${BLUR_PASSES:-0}; blur_radius ${BLUR_RADIUS:-0}" >/dev/null
 python3 - <<'PY' > /tmp/glass.cmd
 import sys; sys.path.insert(0, "/home/repo")

@@ -25,6 +25,18 @@ PANEL_NAMESPACES = ("waybar", "swayctl-bar", "swayctl-quick", "swayctl-osd", "sw
 # (layer_effects takes 0-99; the old 999 was rejected and took the OSD's
 # blur/glass with it)
 GLASS_RADIUS = {"swayctl-osd": 22}
+# The bezel (glass_edge) no wider than the smallest corner radius a target
+# draws, less 1 px - as the demo builds its glass (bezel = min(edge, r - 1)).
+# A wider bezel met itself across a pane's corners on a diagonal crease:
+# each edge bent on its own and a bubble or pill read as eight pieces.
+EDGE_CAP = {"chosua": 17, "swayctl-bar": 14, "swayctl-quick": 16,
+            "swayctl-launcher": 13, "swayctl-traymenu": 13, "swayctl-osd": 21,
+            "swayctl-notifications": 13}
+EDGE_CAP_DEFAULT = 11  # libadwaita's own panes (the settings window), cards
+
+
+def glass_edge(target: str, edge: int) -> int:
+    return max(1, min(int(edge), EDGE_CAP.get(target, EDGE_CAP_DEFAULT)))
 # Shaped glass: the glass follows what's drawn in the surface (read from its
 # alpha), not the surface's box. Notifications (cards inside one big
 # transparent surface) and Quick Settings, whose panel is invisible: each
@@ -159,7 +171,7 @@ class EffectsModule:
                         cmds.append(f'layer_effects "{ns}" "glass_text {self.text_on(ns, ctx)}"')
                     if "glass-tune" in fork_features(ctx.live):
                         # rim path length + RGB dispersion (Thickness / colour at the rim)
-                        cmds.append(f'layer_effects "{ns}" "glass_edge {v["glass_edge"]}"')
+                        cmds.append(f'layer_effects "{ns}" "glass_edge {glass_edge(ns, v["glass_edge"])}"')
                         cmds.append(f'layer_effects "{ns}" "glass_thickness {v["glass_thickness"]}"')
                         cmds.append(f'layer_effects "{ns}" "glass_chroma {v["glass_chroma"]:g}"')
         if "glass-windows" in fork_features(ctx.live):
@@ -216,7 +228,7 @@ class EffectsModule:
         if glass:
             tune += f", glass highlight {v.get('glass_highlight', 0.50):g}"
             if ctx is not None and "glass-tune" in fork_features(ctx.live):
-                tune += (f", glass edge {v.get('glass_edge', 70)}"
+                tune += (f", glass edge {{edge}}"
                          f", glass thickness {v.get('glass_thickness', 200)}"
                          f", glass chroma {v.get('glass_chroma', 0.40):g}")
         def what(app: str) -> str:
@@ -226,7 +238,7 @@ class EffectsModule:
             if app_text and app in INK_APPS and ctx is not None and "glass-ink" in fork_features(ctx.live):
                 app_text = "auto"
             return (f"glass enable, glass refraction {v['glass_refraction']}, glass blur {v['glass_blur']}"
-                    + tune
+                    + tune.replace("{edge}", str(glass_edge(app, v.get("glass_edge", 70))))
                     + (f", glass text {app_text}" if app_text else "") + ", border none, shadows disable")
 
         cmds = [f'[app_id="{app}"] {what(app)}' for app in GLASS_APPS]

@@ -170,8 +170,8 @@ class GlassTest(unittest.TestCase):
         self.assertFalse(any("glass_edge" in c for c in cmds))
         # bar / Quick Settings: the same Liquid glass knobs as windows…
         lens = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-shaped", "glass-tune"]}, glass=True)
-        self.assertIn('layer_effects "swayctl-bar" "glass_edge 20"', lens)
-        self.assertIn('layer_effects "swayctl-quick" "glass_edge 20"', lens)
+        self.assertIn('layer_effects "swayctl-bar" "glass_edge 14"', lens)  # capped at the pills' radius
+        self.assertIn('layer_effects "swayctl-quick" "glass_edge 16"', lens)
         self.assertIn('layer_effects "swayctl-bar" "glass_highlight 0.9"', lens)
         self.assertIn('layer_effects "swayctl-quick" "glass_thickness 90"', lens)
         # …and they move with the sliders (no demo-capsule pinning)
@@ -181,7 +181,7 @@ class GlassTest(unittest.TestCase):
         self.assertIn('layer_effects "swayctl-bar" "glass_refraction 120"', moved)
         self.assertIn('layer_effects "swayctl-quick" "glass_thickness 300"', moved)
         self.assertIn('layer_effects "swayctl-quick" "glass_highlight 0.2"', moved)
-        self.assertIn('layer_effects "swayctl-bar" "glass_edge 40"', moved)
+        self.assertIn('layer_effects "swayctl-bar" "glass_edge 14"', moved)  # 40, capped at the pills' radius
         self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0"', moved)
 
     def test_glass_blur_needs_its_feature(self):
@@ -197,3 +197,11 @@ class GlassTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GlassEdgeCapTest(unittest.TestCase):
+    def test_edge_capped_at_corner_radius(self):
+        from swayctl_center.modules.effects import glass_edge
+        self.assertEqual(glass_edge("chosua", 39), 17)        # its bubbles: 18 px corners
+        self.assertEqual(glass_edge("swayctl-bar", 8), 8)     # under the cap: as set
+        self.assertEqual(glass_edge("unknown-app", 39), 11)   # libadwaita panes
