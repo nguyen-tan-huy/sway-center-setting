@@ -37,7 +37,10 @@ PY
 python3 - <<'PY' > /tmp/lens.sh
 import sys; sys.path.insert(0, "/home/repo")
 from swayctl_center import schema
+import os
 eff = schema.defaults()["effects"]
+# GLASS_BLUR=37 BLUR_PASSES=2 BLUR_RADIUS=5: blurred glass (no kept backdrop)
+eff["glass_blur"] = int(os.environ.get("GLASS_BLUR", eff["glass_blur"]))
 for ns in ("swayctl-bar", "swayctl-quick"):
     # one effect per command: layer_effects parses only its first effect
     for e in ["blur enable", "glass enable", "blur_ignore_transparent enable",
@@ -46,7 +49,7 @@ for ns in ("swayctl-bar", "swayctl-quick"):
                "glass_edge", "glass_thickness", "glass_chroma")]:
         print('swaymsg \'layer_effects "%s" "%s"\' >/dev/null' % (ns, e))
 PY
-swaymsg "blur_passes 0; blur_radius 0" >/dev/null
+swaymsg "blur_passes ${BLUR_PASSES:-0}; blur_radius ${BLUR_RADIUS:-0}" >/dev/null
 . /tmp/lens.sh
 bin=/home/repo/swayctl-bar/target/release/swayctl-bar
 $bin --config-dir /tmp/bar 2>/tmp/out/bar-ink.log &
