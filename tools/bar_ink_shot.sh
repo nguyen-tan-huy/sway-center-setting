@@ -17,7 +17,7 @@ c.set_source_rgb(0.08, 0.10, 0.22); c.rectangle(0, 0, 960, 1080); c.fill()
 c.set_source_rgb(0.95, 0.93, 0.88); c.rectangle(960, 0, 960, 1080); c.fill()
 s.write_to_png("/tmp/wall.png")
 PY
-swaymsg 'output * bg /tmp/wall.png fill' >/dev/null
+if [ -n "${WALLFILE:-}" ]; then swaymsg "output * bg $WALLFILE fill" >/dev/null; else swaymsg 'output * bg /tmp/wall.png fill' >/dev/null; fi
 mkdir -p bar
 cat > bar/config.json <<'JSON'
 {"modules_left": ["workspaces", "mode"], "modules_center": ["clock"], "modules_right": ["status"],
