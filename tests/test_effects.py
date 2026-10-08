@@ -204,5 +204,6 @@ class GlassEdgeCapTest(unittest.TestCase):
         from swayctl_center.modules.effects import glass_edge
         self.assertEqual(glass_edge("chosua", 100), 17)       # its bubbles: 18 px corners
         self.assertEqual(glass_edge("chosua", 50), 8)         # half of that (8.5, to even)
-        self.assertEqual(glass_edge("swayctl-bar", 140), 14)  # an old px value: full width
+        self.assertEqual(glass_edge("chosua", 300), 51)       # up to 3x
+        self.assertEqual(glass_edge("swayctl-bar", 400), 14)  # out of range (an old px value): 100 %
         self.assertEqual(glass_edge("unknown-app", 100), 11)  # libadwaita panes

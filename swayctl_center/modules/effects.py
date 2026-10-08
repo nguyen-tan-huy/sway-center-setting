@@ -29,6 +29,7 @@ GLASS_RADIUS = {"swayctl-osd": 22}
 # draws, less 1 px - as the demo builds its glass (bezel = min(edge, r - 1)).
 # A wider bezel met itself across a pane's corners on a diagonal crease:
 # each edge bent on its own and a bubble or pill read as eight pieces.
+# (swayctl-fx now rounds those corners, so up to 3x this is allowed.)
 EDGE_CAP = {"chosua": 17, "swayctl-bar": 14, "swayctl-quick": 16,
             "swayctl-launcher": 13, "swayctl-traymenu": 13, "swayctl-osd": 21,
             "swayctl-notifications": 13}
@@ -36,12 +37,12 @@ EDGE_CAP_DEFAULT = 11  # libadwaita's own panes (the settings window), cards
 
 
 def glass_edge(target: str, share: int) -> int:
-    """glass_edge (the setting) is a share of the cap, 10-100 %: the rim
-    narrows from as wide as the corners allow; anything else (an old px value)
-    counts as the full width."""
+    """glass_edge (the setting) is a share of the cap, 10-300 %: 100 % is as
+    wide as the corners (swayctl-fx rounds a wider rim's corners, so it stays
+    one piece); anything else (an old px value) counts as 100 %."""
     cap = EDGE_CAP.get(target, EDGE_CAP_DEFAULT)
     share = int(share)
-    if not 10 <= share <= 100:
+    if not 10 <= share <= 300:
         share = 100
     return max(1, round(cap * share / 100))
 # Shaped glass: the glass follows what's drawn in the surface (read from its
