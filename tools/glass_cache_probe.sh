@@ -27,6 +27,7 @@ for x, y, r, col in ((2650, 260, 190, (0.2, 0.9, 0.6)), (500, 1110, 330, (1, 0.9
 s.write_to_png("/tmp/wall.png")
 PY
 swaymsg 'output * bg /tmp/wall.png fill' >/dev/null
+swaymsg "blur_passes ${BLUR_PASSES:-0}; blur_radius ${BLUR_RADIUS:-0}" >/dev/null
 python3 - <<'PY' > /tmp/glass.cmd
 import sys; sys.path.insert(0, "/home/repo")
 from swayctl_center import schema
@@ -37,8 +38,8 @@ for k in list(e):
     if v is not None:
         e[k] = type(e[k])(float(v)) if not isinstance(e[k], bool) else v == "1"
 print('[title="glassprobe"] floating enable, resize set 1400 900, move position 40 40, border none, '
-      'glass enable, glass refraction %d, glass blur 0, glass highlight %g, glass edge %d, '
-      'glass thickness %d, glass chroma %g' % (e["glass_refraction"], e["glass_highlight"],
+      'glass enable, glass refraction %d, glass blur %d, glass highlight %g, glass edge %d, '
+      'glass thickness %d, glass chroma %g' % (e["glass_refraction"], e["glass_blur"], e["glass_highlight"],
       e["glass_edge"], e["glass_thickness"], e["glass_chroma"]))
 PY
 python3 - <<'PY' &
