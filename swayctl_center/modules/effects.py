@@ -35,8 +35,15 @@ EDGE_CAP = {"chosua": 17, "swayctl-bar": 14, "swayctl-quick": 16,
 EDGE_CAP_DEFAULT = 11  # libadwaita's own panes (the settings window), cards
 
 
-def glass_edge(target: str, edge: int) -> int:
-    return max(1, min(int(edge), EDGE_CAP.get(target, EDGE_CAP_DEFAULT)))
+def glass_edge(target: str, share: int) -> int:
+    """glass_edge (the setting) is a share of the cap, 10-100 %: the rim
+    narrows from as wide as the corners allow; anything else (an old px value)
+    counts as the full width."""
+    cap = EDGE_CAP.get(target, EDGE_CAP_DEFAULT)
+    share = int(share)
+    if not 10 <= share <= 100:
+        share = 100
+    return max(1, round(cap * share / 100))
 # Shaped glass: the glass follows what's drawn in the surface (read from its
 # alpha), not the surface's box. Notifications (cards inside one big
 # transparent surface) and Quick Settings, whose panel is invisible: each

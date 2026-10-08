@@ -163,7 +163,7 @@ class GlassTest(unittest.TestCase):
         self.assertIn('layer_effects "waybar" "reset"', cmds)  # panels off: others untouched
         # bezel + body + dispersion only on forks that speak glass-tune
         tune = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-tune"]}, glass=True)
-        self.assertIn('layer_effects "swayctl-osd" "glass_edge 20"', tune)
+        self.assertIn('layer_effects "swayctl-osd" "glass_edge 21"', tune)  # 100 % of its corners
         self.assertIn('layer_effects "swayctl-osd" "glass_thickness 90"', tune)
         # dispersion follows the setting (default 0.35)
         self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0.35"', tune)
@@ -181,7 +181,7 @@ class GlassTest(unittest.TestCase):
         self.assertIn('layer_effects "swayctl-bar" "glass_refraction 120"', moved)
         self.assertIn('layer_effects "swayctl-quick" "glass_thickness 300"', moved)
         self.assertIn('layer_effects "swayctl-quick" "glass_highlight 0.2"', moved)
-        self.assertIn('layer_effects "swayctl-bar" "glass_edge 14"', moved)  # 40, capped at the pills' radius
+        self.assertIn('layer_effects "swayctl-bar" "glass_edge 6"', moved)  # 40 % of the pills' 14
         self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0"', moved)
 
     def test_glass_blur_needs_its_feature(self):
@@ -202,6 +202,7 @@ if __name__ == "__main__":
 class GlassEdgeCapTest(unittest.TestCase):
     def test_edge_capped_at_corner_radius(self):
         from swayctl_center.modules.effects import glass_edge
-        self.assertEqual(glass_edge("chosua", 39), 17)        # its bubbles: 18 px corners
-        self.assertEqual(glass_edge("swayctl-bar", 8), 8)     # under the cap: as set
-        self.assertEqual(glass_edge("unknown-app", 39), 11)   # libadwaita panes
+        self.assertEqual(glass_edge("chosua", 100), 17)       # its bubbles: 18 px corners
+        self.assertEqual(glass_edge("chosua", 50), 8)         # half of that (8.5, to even)
+        self.assertEqual(glass_edge("swayctl-bar", 140), 14)  # an old px value: full width
+        self.assertEqual(glass_edge("unknown-app", 100), 11)  # libadwaita panes

@@ -78,7 +78,7 @@ class RetireOldChoicesTest(unittest.TestCase):
         # winaviation liquid-glass-demo capsule (Precision Lens): clear body,
         # bright rim; every surface (windows, bar, quick, osd) follows these
         eff = schema.defaults()["effects"]
-        self.assertEqual(eff["glass_edge"], 20)
+        self.assertEqual(eff["glass_edge"], 100)
         self.assertEqual(eff["glass_thickness"], 90)
         self.assertEqual(eff["glass_refraction"], 50)
         self.assertEqual(eff["glass_chroma"], 0.35)
