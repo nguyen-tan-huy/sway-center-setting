@@ -6,7 +6,7 @@
 # the fork-only commands (blur, corner_radius...) over IPC, so that config
 # stays valid for plain sway.
 pkgname=swayctl-fx
-pkgver=0.6.r31.2e122c1445b6fd7
+pkgver=0.6.r31.2e122c1466921b7
 pkgrel=1
 pkgdesc="SwayFX with swayctl-center patches, installed alongside sway"
 arch=(x86_64)

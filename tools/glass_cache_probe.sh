@@ -19,6 +19,9 @@ c = cairo.Context(s)
 g = cairo.LinearGradient(0, 0, 3072, 1920)
 g.add_color_stop_rgb(0, 0.10, 0.20, 0.55); g.add_color_stop_rgb(0.5, 0.95, 0.85, 0.75); g.add_color_stop_rgb(1, 0.98, 0.65, 0.20)
 c.set_source(g); c.paint()
+import os
+if os.environ.get("WALL") == "pink":  # the user's hot pink wallpaper
+    c.set_source_rgb(0.93, 0.16, 0.42); c.paint()
 for i in range(64):
     c.set_source_rgba(1, 1, 1, 0.18 if i % 2 else 0.05)
     c.rectangle(i * 48, 0, 20, 1920); c.fill()
@@ -37,7 +40,8 @@ for k in list(e):
     v = os.environ.get(k.upper())
     if v is not None:
         e[k] = type(e[k])(float(v)) if not isinstance(e[k], bool) else v == "1"
-print('[title="glassprobe"] floating enable, resize set 1400 900, move position 40 40, border none, '
+print(('[title="glassprobe"] ' if os.environ.get("TILED") == "1" else
+       '[title="glassprobe"] floating enable, resize set 1400 900, move position 40 40, ') + 'border none, '
       'glass enable, glass refraction %d, glass blur %d, glass highlight %g, glass edge %d, '
       'glass thickness %d, glass chroma %g' % (e["glass_refraction"], e["glass_blur"], e["glass_highlight"],
       e["glass_edge"], e["glass_thickness"], e["glass_chroma"]))
