@@ -91,9 +91,16 @@ impl QuickSettings {
         }
         self.opened.set(self.opened.get().wrapping_add(1));
         // before anything of ours is on screen: that's what will be behind it
-        self.backdrop.replace(backdrop::Grid::capture(monitor).map(|g| (Rc::new(g), monitor.clone())));
+        // (unless the compositor inks the text itself: then nothing is read)
+        let ink = backdrop::compositor_ink();
+        self.backdrop.replace(if ink {
+            None
+        } else {
+            backdrop::Grid::capture(monitor).map(|g| (Rc::new(g), monitor.clone()))
+        });
         let cfg = self.cfg.borrow().clone();
         let win = gtk::Window::builder().application(&self.app).css_classes(["quick-window"]).build();
+        backdrop::set_key_ink(&win, ink);
         win.init_layer_shell();
         win.set_namespace(Some(NAMESPACE));
         win.set_monitor(Some(monitor));
@@ -452,6 +459,9 @@ impl QuickSettings {
     /// page scrolling underneath, like the demo's draggable pane. Stock sway
     /// has no probe: the snapshot from opening stays.
     fn follow_backdrop(self: &Rc<Self>) {
+        if backdrop::compositor_ink() {
+            return; // the compositor inks the text: nothing to follow
+        }
         let generation = self.opened.get();
         let me = Rc::downgrade(self);
         glib::timeout_add_local(std::time::Duration::from_millis(250), move || {

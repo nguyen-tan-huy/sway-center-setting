@@ -73,10 +73,21 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
     let geo = monitor.geometry();
     if cfg.backdrop.adaptive {
         let (pos, m, bd, mon) = (cfg.position.clone(), cfg.margins, cfg.backdrop.clone(), monitor.clone());
+        // `full`: when the probe has nothing yet, fall back to capturing the
+        // whole frame (and then the wallpaper). Only on events: every
+        // backdrop read makes the compositor read pixels back synchronously
+        // and a full capture is a whole 3K frame — on a 1 s timer that was a
+        // 10–20 ms hitch of the cursor every second.
         let retag = {
             let (win, geo) = (win.downgrade(), geo);
-            move || {
+            move |full: bool| {
                 let Some(win) = win.upgrade() else { return };
+                // the compositor inks the text: nothing to sample or tag
+                let ink = crate::ui::backdrop::compositor_ink();
+                crate::ui::backdrop::set_key_ink(&win, ink);
+                if ink {
+                    return;
+                }
                 let (w, h) = (win.width() as f32, win.height() as f32);
                 let (mw, mh) = (geo.width() as f32, geo.height() as f32);
                 let origin = match pos.as_str() {
@@ -86,10 +97,14 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
                 };
                 // what's behind the bar itself (glass probe: its own text left
                 // out), else the whole frame, else the wallpaper
-                let grid = crate::ui::backdrop::Grid::probe(&mon, "swayctl-bar", (win.width(), win.height()))
-                    .or_else(|| crate::ui::backdrop::Grid::capture(&mon)).or_else(|| {
-                    crate::ui::backdrop::Grid::new(&bd, geo.width(), geo.height())
-                });
+                let probed = crate::ui::backdrop::Grid::probe(&mon, "swayctl-bar", (win.width(), win.height()));
+                let grid = if full {
+                    probed.or_else(|| crate::ui::backdrop::Grid::capture(&mon)).or_else(|| {
+                        crate::ui::backdrop::Grid::new(&bd, geo.width(), geo.height())
+                    })
+                } else {
+                    probed
+                };
                 if let Some(grid) = grid {
                     crate::ui::backdrop::tag_modules(&win, &grid, origin, &bd);
                 }
@@ -100,20 +115,21 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
         let r = retag.clone();
         win.connect_map(move |_| {
             let r = r.clone();
-            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || r());
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || r(true));
         });
         let r = retag.clone();
         svc.sway.state.subscribe(move |_| {
             let r = r.clone();
             // after the workspace buttons have been laid out again
-            glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || r());
+            glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || r(true));
         });
-        // and on a timer: the wallpaper (or a page scrolling under a
-        // fullscreen-adjacent bar) can change without any sway event; the
-        // glass probe is a small read, so once a second is cheap
+        // and on a slow timer: the wallpaper (or a page scrolling under a
+        // fullscreen-adjacent bar) can change without any sway event. Probe
+        // only, and not often: each read stalls the compositor's frame (it
+        // was once a second — a visible cursor hitch every second at 120 Hz)
         let r = retag.clone();
-        glib::timeout_add_seconds_local(1, move || {
-            r();
+        glib::timeout_add_seconds_local(10, move || {
+            r(false);
             glib::ControlFlow::Continue
         });
     }

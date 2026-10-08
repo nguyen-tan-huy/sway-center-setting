@@ -405,6 +405,59 @@ fn tag(w: &gtk::Widget, dark: bool, step: u32, halo: u32) {
     w.add_css_class(&format!("halo-{halo}"));
 }
 
+/// The compositor inks the text itself (swayctl-fx "glass-ink", the bar's
+/// `glass_text auto`) and the glass is on: draw text in the key colour
+/// (`.ink-key`, see swayctl-center's adaptive CSS) and ask nothing - no
+/// probe, no capture, no tagging. Asked of sway at most every 30 s.
+pub fn compositor_ink() -> bool {
+    use std::cell::Cell;
+    use std::time::{Duration, Instant};
+    thread_local! {
+        static KNOWN: Cell<Option<(Instant, bool)>> = const { Cell::new(None) };
+    }
+    if !current().lens {
+        return false;
+    }
+    if let Some((at, ink)) = KNOWN.with(|k| k.get()) {
+        if at.elapsed() < Duration::from_secs(30) {
+            return ink;
+        }
+    }
+    let ink = crate::services::sway::request(7 /* GET_VERSION */, "")
+        .ok()
+        .and_then(|v| v.get("swayctl_features")?.as_array().cloned())
+        .is_some_and(|f| f.iter().any(|x| x.as_str() == Some("glass-ink")));
+    KNOWN.with(|k| k.set(Some((Instant::now(), ink))));
+    ink
+}
+
+/// Key ink on (`compositor_ink`): mark the window; any adaptive tags go.
+pub fn set_key_ink(win: &impl IsA<gtk::Widget>, on: bool) {
+    let win = win.as_ref();
+    if !on {
+        win.remove_css_class("ink-key");
+        return;
+    }
+    if win.has_css_class("ink-key") {
+        return;
+    }
+    win.add_css_class("ink-key");
+    // tags from before (adaptive ink) would keep their smoke and halos
+    let mut stack = vec![win.clone()];
+    while let Some(w) = stack.pop() {
+        for c in w.css_classes() {
+            if c == "on-dark" || c == "on-light" || c.starts_with("tint-") || c.starts_with("halo-") {
+                w.remove_css_class(&c);
+            }
+        }
+        let mut child = w.first_child();
+        while let Some(ch) = child {
+            child = ch.next_sibling();
+            stack.push(ch);
+        }
+    }
+}
+
 /// Tag each module of a bar window `on-light` / `on-dark` by what's behind it.
 /// `origin` is the window's top left on its monitor.
 pub fn tag_modules(win: &gtk::ApplicationWindow, grid: &Grid, origin: (f32, f32), backdrop: &Backdrop) {

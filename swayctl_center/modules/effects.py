@@ -64,9 +64,19 @@ ADAPTIVE = ("swayctl-bar", "swayctl-quick", "swayctl-osd", "swayctl-launcher", "
 # swayctl-center's own window (it draws only panes, the rest is clear)
 SETTINGS_APP_ID = "io.github.huyhappy.SwayctlCenter.Settings"
 # Windows that are liquid glass with the shell's settings: they draw only
-# their panes (the rest is clear) and pick their text from what's behind
-# (GET_BACKDROP). chosua: the Matrix client (~/Downloads/Element).
+# their panes (the rest is clear). chosua: the Matrix client
+# (~/Downloads/Element).
 GLASS_APPS = (SETTINGS_APP_ID, "chosua")
+# The text each one draws, for the compositor's `glass text`: "none" = the app
+# picks light/dark per pane itself from what's behind (GET_BACKDROP); "light"
+# = always light text, and the glass darkens just enough behind it where the
+# backdrop is too bright (the app asks the compositor nothing)
+GLASS_APP_TEXT = {SETTINGS_APP_ID: "none", "chosua": "light"}
+# With the fork's key ink ("glass-ink"): these draw their text in the key
+# colour and the compositor inks it light or dark from what's behind the glass
+# (`glass text auto`); they ask nothing (no GET_BACKDROP) and pick nothing
+INK_APPS = ("chosua",)
+INK_LAYERS = ("swayctl-bar", "swayctl-quick")
 
 
 class EffectsModule:
@@ -188,10 +198,12 @@ class EffectsModule:
 
     @staticmethod
     def text_on(ns: str, ctx: Context) -> str:
-        """The text drawn on a pane of glass, so the compositor keeps it
-        readable: the theme's (light text on dark). swayctl-bar's surfaces pick
-        each pane's text from what's behind it instead."""
-        # the glass no longer adapts to what's behind it: it follows the theme
+        """The text drawn on a pane of glass, for the compositor: "auto" (key
+        ink, the compositor inks it from what's behind) for the bar and Quick
+        Settings when the fork can; else "none" - the other surfaces pick
+        their own text per pane from what's behind."""
+        if ns in INK_LAYERS and "glass-ink" in fork_features(ctx.live):
+            return "auto"
         return "none"
 
     def app_glass(self, glass: bool, v: dict[str, Any], text: str | None = None,
@@ -208,16 +220,23 @@ class EffectsModule:
                 tune += (f", glass edge {v.get('glass_edge', 70)}"
                          f", glass thickness {v.get('glass_thickness', 200)}"
                          f", glass chroma {v.get('glass_chroma', 0.40):g}")
-        what = (f"glass enable, glass refraction {v['glass_refraction']}, glass blur {v['glass_blur']}"
-                + tune
-                + (f", glass text {text}" if text else "") + ", border none, shadows disable"
-                if glass else "glass disable")
-        cmds = [f'[app_id="{app}"] {what}' for app in GLASS_APPS]
-        if what != self._app_glass:
-            self._app_glass = what
+        def what(app: str) -> str:
+            if not glass:
+                return "glass disable"
+            app_text = GLASS_APP_TEXT.get(app, text) if text else None
+            if app_text and app in INK_APPS and ctx is not None and "glass-ink" in fork_features(ctx.live):
+                app_text = "auto"
+            return (f"glass enable, glass refraction {v['glass_refraction']}, glass blur {v['glass_blur']}"
+                    + tune
+                    + (f", glass text {app_text}" if app_text else "") + ", border none, shadows disable")
+
+        cmds = [f'[app_id="{app}"] {what(app)}' for app in GLASS_APPS]
+        wanted = "\n".join(what(app) for app in GLASS_APPS)
+        if wanted != self._app_glass:
+            self._app_glass = wanted
             # quoted: sway splits commands at commas, which would leave the rest
             # of the list outside the for_window
-            cmds = [f'for_window [app_id="{app}"] "{what}"' for app in GLASS_APPS] + cmds
+            cmds = [f'for_window [app_id="{app}"] "{what(app)}"' for app in GLASS_APPS] + cmds
         return cmds
 
     def import_current(self, ipc: swayipc.Connection, config: swayconfig.Config,

@@ -142,7 +142,33 @@ def _lens_ink_css(accent_fg: str, extra_text: str = "") -> str:
   color: {accent_fg}; text-shadow: 0 1px 2px alpha(black, 0.25); -gtk-icon-shadow: none;
 }}
 """)
+    out.append(key_ink_css(accent_fg))
     return "".join(out)
+
+
+# swayctl-fx's key ink (`glass_text auto`): text drawn in this colour over a
+# pane of glass is inked light or dark by the compositor from what's behind
+INK_KEY = "#FF00FE"
+
+
+def key_ink_css(accent_fg: str) -> str:
+    """swayctl-bar marks a window `.ink-key` when the compositor inks its text
+    (swayctl-fx "glass-ink" with the glass on): every text and icon is drawn
+    in the key, no halo; what sits on the accent (active tiles, the focused
+    workspace, a selection) keeps its own colour."""
+    k = INK_KEY
+    return f"""
+/* key ink: the compositor colours this text (swayctl-fx glass_text auto) */
+window.ink-key label, window.ink-key image, window.ink-key button, window.ink-key text,
+window.ink-key placeholder, window.ink-key .workspace, window.ink-key .window-title,
+window.ink-key .tile:not(.active), window.ink-key .slider-row {{
+  color: {k}; text-shadow: none; -gtk-icon-shadow: none; transition: none;
+}}
+window.ink-key .workspace label {{ color: alpha({k}, 0.78); }}
+window.ink-key .workspace.focused label, window.ink-key .workspace.focused,
+window.ink-key .tile.active label, window.ink-key .tile.active image,
+window.ink-key :selected label, window.ink-key :selected image {{ color: {accent_fg}; }}
+"""
 
 
 def bar_size_css(height: int, border: float = 0, font_pt: float = 0) -> str:

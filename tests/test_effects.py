@@ -87,6 +87,30 @@ class GlassTextTest(unittest.TestCase):
             self.assertTrue(all(c.endswith('"glass_text none"') for c in cmds if "glass_text" in c))
             self.assertTrue(any("glass text none" in c for c in cmds if "SwayctlCenter" in c))
 
+    def test_key_ink(self):
+        # with the fork's key ink: ChoSua, the bar and Quick Settings get
+        # `auto`; the other surfaces and the settings window keep picking
+        ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features":
+                      ["glass", "glass-shaped", "glass-text", "glass-windows", "glass-ink"]},
+                      theme=themes.BUILTIN["dark"])
+        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
+        self.assertTrue(any(c.startswith('[app_id="chosua"]') and "glass text auto" in c for c in cmds))
+        self.assertIn('layer_effects "swayctl-bar" "glass_text auto"', cmds)
+        self.assertIn('layer_effects "swayctl-quick" "glass_text auto"', cmds)
+        self.assertFalse(any(c == 'layer_effects "swayctl-osd" "glass_text auto"' for c in cmds))
+        self.assertTrue(any(c.startswith('[app_id="io.github.huyhappy.SwayctlCenter.Settings"]')
+                            and "glass text none" in c for c in cmds))
+
+    def test_chosua_light_text(self):
+        # ChoSua draws light text and leaves its readability to the glass;
+        # the settings window still picks its own per pane
+        cmds = self.cmds("dark")
+        self.assertTrue(any(c.startswith('[app_id="chosua"]') and c.endswith("glass text light, border none, shadows disable")
+                            for c in cmds))
+        self.assertTrue(any(c.startswith('for_window [app_id="chosua"]') and "glass text light" in c for c in cmds))
+        self.assertTrue(any(c.startswith('[app_id="io.github.huyhappy.SwayctlCenter.Settings"]') and "glass text none" in c
+                            for c in cmds))
+
     def test_needs_the_feature(self):
         ctx = Context(Path("/app"), live=self.FX | {"swayctl_features": ["glass", "glass-shaped"]},
                       theme=themes.BUILTIN["dark"])
