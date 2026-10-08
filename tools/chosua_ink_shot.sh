@@ -14,15 +14,20 @@ python3 - <<'PY'
 import cairo
 s = cairo.ImageSurface(cairo.FORMAT_RGB24, 3072, 1920)
 c = cairo.Context(s)
-c.set_source_rgb(0.08, 0.10, 0.22); c.rectangle(0, 0, 1536, 1920); c.fill()
-c.set_source_rgb(0.95, 0.93, 0.88); c.rectangle(1536, 0, 1536, 1920); c.fill()
+import os
+if os.environ.get("WALL") == "blue":  # a mid blue like the user's wallpaper
+    c.set_source_rgb(0.10, 0.45, 0.95); c.paint()
+else:
+    c.set_source_rgb(0.08, 0.10, 0.22); c.rectangle(0, 0, 1536, 1920); c.fill()
+    c.set_source_rgb(0.95, 0.93, 0.88); c.rectangle(1536, 0, 1536, 1920); c.fill()
 s.write_to_png("/tmp/wall.png")
 PY
 swaymsg 'output * bg /tmp/wall.png fill' >/dev/null
+swaymsg "blur_passes ${BLUR_PASSES:-0}; blur_radius ${BLUR_RADIUS:-0}" >/dev/null
 # ChoSua turns its glass styling on from swayctl-center's settings
 mkdir -p "$HOME/.config/swayctl-center"
 echo '{"values": {"effects": {"glass": true, "glass_refraction": 140}}}' > "$HOME/.config/swayctl-center/settings.json"
-swaymsg 'for_window [app_id="chosua"] "floating enable, resize set 1500 900, move position 400 200, border none, glass enable, glass refraction 140, glass blur 0, glass highlight 0.9, glass edge 20, glass thickness 652, glass chroma 0.083, glass text auto, shadows disable"' >/dev/null
+swaymsg "for_window [app_id=\"chosua\"] \"floating enable, resize set 1500 900, move position 400 200, border none, glass enable, glass refraction 140, glass blur ${GLASS_BLUR:-0}, glass highlight 0.9, glass edge 20, glass thickness 652, glass chroma 0.083, glass text auto, shadows disable\"" >/dev/null
 /tmp/out/chosua-gtk >/tmp/out/chosua-ink-app.log 2>&1 &
 sleep 8
 grim /tmp/out/chosua-ink.png
