@@ -234,7 +234,8 @@ fn clock(cfg: &Config) -> gtk::Button {
 
 /// The cluster of status icons on the right; one click opens Quick Settings.
 fn status(svc: &Rc<Services>, quick: &Rc<QuickSettings>, monitor: &gdk::Monitor) -> gtk::Button {
-    let row = gtk::Box::builder().spacing(10).build();
+    // spacing from CSS (border-spacing on .status-row), so bar.padding can set it
+    let row = gtk::Box::builder().css_classes(["status-row"]).build();
     let net = gtk::Image::new();
     let bt = gtk::Image::from_icon_name("bluetooth-active-symbolic");
     let vol = gtk::Image::new();

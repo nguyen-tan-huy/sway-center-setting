@@ -83,7 +83,9 @@ VI = {
     "When a window asks for attention": "Khi cửa sổ cần chú ý", "Window animations": "Hiệu ứng chuyển động cửa sổ",
     "Opening and closing apps": "Mở và đóng app", "Switching workspaces": "Chuyển workspace",
     "Moving and resizing windows": "Di chuyển và đổi cỡ cửa sổ", "Animation length (ms)": "Độ dài hiệu ứng (ms)",
-    "Animations": "Hiệu ứng động",
+    "Animations": "Hiệu ứng động", "Padding (px)": "Khoảng đệm (px)",
+    "Room around what's inside each pill of the bar: less fits more, more feels airier.":
+        "Khoảng trống quanh nội dung trong mỗi viên của bar: ít thì gọn, nhiều thì thoáng.",
     "Apps pop in when they open and shrink away when they close.": "App phóng ra khi mở và thu nhỏ biến mất khi đóng.",
     "Workspaces fade into each other when you switch.": "Các workspace mờ dần sang nhau khi chuyển.",
     "Windows glide to their new place and size.": "Cửa sổ trượt mượt tới vị trí và kích thước mới.",

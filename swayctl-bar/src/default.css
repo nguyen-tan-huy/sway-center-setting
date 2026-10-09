@@ -11,6 +11,7 @@ window.bar { background: none; color: #1d1d1f; }
 .workspace.urgent { background: @error_bg_color; color: @error_fg_color; }
 .mode { padding: 0 10px; border-radius: 8px; background: @accent_bg_color; color: @accent_fg_color; }
 .clock, .status { min-height: 0; padding: 0 10px; border-radius: 8px; font-weight: 600; }
+.status-row { border-spacing: 10px 0; }
 .battery-percent { font-weight: 600; font-feature-settings: "tnum"; }
 .battery-percent.warning { color: @warning_color; }
 .battery-percent.critical { color: @error_color; }

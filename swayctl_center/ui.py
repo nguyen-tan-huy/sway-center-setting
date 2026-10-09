@@ -82,7 +82,7 @@ GROUPS: dict[str, list[tuple[str, list[str]]]] = {
                              "focus_on_window_activation", "workspace_auto_back_and_forth"])],
     "input.keyboard": [("Layout", ["xkb_layout", "xkb_variant", "xkb_options"]),
                        ("Typing", ["repeat_delay", "repeat_rate"])],
-    "bar": [("", ["position", "height", "theme"]),
+    "bar": [("", ["position", "height", "padding", "theme"]),
             ("Modules", ["modules_left", "modules_center", "modules_right"]),
             ("", ["clock_format"])],
     "effects": [("", ["corner_radius", "dim_inactive", "glass"]),

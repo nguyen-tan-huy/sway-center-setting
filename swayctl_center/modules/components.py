@@ -208,6 +208,25 @@ window.bar button {{ min-height: 0; }}{font}
 """
 
 
+def bar_padding_css(padding: int) -> str:
+    """bar.padding: the room inside the bar's pills, left and right - the
+    pills' own padding, each workspace button and tray icon, and the gap
+    between the status icons (border-spacing on .status-row). 10 = the
+    default look."""
+    p = max(0, int(padding))
+    ws = max(2, round(p * 0.6))
+    return f"""
+/* bar.padding = {p}px */
+window.bar .clock, window.bar .status, window.bar .tray, window.bar .mode, window.bar .window-title {{
+  padding-left: {p}px; padding-right: {p}px;
+}}
+window.bar .workspaces {{ padding-left: 2px; padding-right: 2px; }}
+window.bar .workspace {{ padding-left: {ws}px; padding-right: {ws}px; min-width: {14 + p}px; }}
+window.bar .tray-item {{ padding-left: {round(p / 2)}px; padding-right: {round(p / 2)}px; min-width: 0; }}
+window.bar .status-row {{ border-spacing: {round(p * 0.8)}px 0; }}
+"""
+
+
 def milk_fill(opacity: float) -> str:
     """OSD-style milky glass (volume/brightness pill): white fill whose
     thickness follows effects.glass_opacity (0..1). Never fully clear —
@@ -1013,7 +1032,8 @@ scale slider {{ background: white; box-shadow: 0 0 0 1px alpha(black, 0.12), 0 1
             # same selectors the look above styles)
             return {"config.json": json.dumps(self.native_config(v, ctx), indent=2, ensure_ascii=False) + "\n",
                     "style.css": style + self.adaptive_css(ctx)
-                    + bar_size_css(v["height"], 1.5 if _glass(ctx) else 0, _font(ctx)[1])}
+                    + bar_size_css(v["height"], 1.5 if _glass(ctx) else 0, _font(ctx)[1])
+                    + bar_padding_css(v.get("padding", 10))}
         style = _render_template(v["style_template"], t, ctx) if v["style_template"] else self.css(ctx, t)
         return {"config.json": json.dumps(self.config(v, ctx), indent=2, ensure_ascii=False) + "\n",
                 "style.css": style}
