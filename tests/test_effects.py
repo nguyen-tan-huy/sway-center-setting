@@ -95,6 +95,8 @@ class GlassTextTest(unittest.TestCase):
                       theme=themes.BUILTIN["dark"])
         cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
         self.assertTrue(any(c.startswith('[app_id="chosua"]') and "glass text auto" in c for c in cmds))
+        self.assertTrue(any(c.startswith('[app_id="xdg-desktop-portal-gtk"]') and "glass text auto" in c
+                            for c in cmds))
         self.assertIn('layer_effects "swayctl-bar" "glass_text auto"', cmds)
         self.assertIn('layer_effects "swayctl-quick" "glass_text auto"', cmds)
         self.assertFalse(any(c == 'layer_effects "swayctl-osd" "glass_text auto"' for c in cmds))
@@ -207,3 +209,31 @@ class GlassEdgeCapTest(unittest.TestCase):
         self.assertEqual(glass_edge("chosua", 300), 51)       # up to 3x
         self.assertEqual(glass_edge("swayctl-bar", 400), 14)  # out of range (an old px value): 100 %
         self.assertEqual(glass_edge("unknown-app", 100), 11)  # libadwaita panes
+
+
+class PortalGlassTest(unittest.TestCase):
+    def test_theme_and_dropin(self):
+        import tempfile
+        from unittest import mock
+        from swayctl_center import portalglass
+        css = portalglass.css(True, "#0a84ff", "#ffffff", 0.1)
+        self.assertIn("#FF00FE", css)              # text in the key ink
+        self.assertIn("@import", css)              # on the desktop's GTK 3 theme
+        with tempfile.TemporaryDirectory() as d, mock.patch("subprocess.run") as run:
+            home = Path(d)
+            self.assertTrue(portalglass.sync(True, css, home))
+            self.assertEqual((portalglass.theme_dir(home) / "gtk-3.0/gtk.css").read_text(), css)
+            self.assertIn("GTK_THEME=SwayctlGlass", portalglass.dropin_path(home).read_text())
+            self.assertTrue(any("try-restart" in c.args[0] for c in run.call_args_list))
+            run.reset_mock()
+            self.assertFalse(portalglass.sync(True, css, home))   # unchanged: no restart
+            run.assert_not_called()
+            self.assertTrue(portalglass.sync(False, "", home))    # off: the drop-in goes
+            self.assertFalse(portalglass.dropin_path(home).exists())
+
+    def test_no_portal_rule_without_key_ink(self):
+        ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features":
+                      ["glass", "glass-shaped", "glass-text", "glass-windows"]},
+                      theme=themes.BUILTIN["dark"])
+        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
+        self.assertFalse(any("xdg-desktop-portal-gtk" in c for c in cmds))
