@@ -129,8 +129,12 @@ class EffectsModule:
             f"blur_passes {v['blur_passes']}",
             f"blur_radius {v['blur_radius']}",
             f"default_dim_inactive {v['dim_inactive']:g}",
-            f"animation_duration_ms {200 if v['animations'] else 0}",
+            f"animation_duration_ms {v.get('anim_duration', 200) if v['animations'] else 0}",
         ]
+        if "animation-kinds" in fork_features(ctx.live):
+            cmds += [f"animations {kind} {'enable' if v.get(key, True) else 'disable'}"
+                     for kind, key in (("open_close", "anim_open_close"), ("workspace", "anim_workspace"),
+                                       ("move", "anim_move"))]
         glass = v["glass"] and "glass" in fork_features(ctx.live)
         if glass:
             # Demo lens (kube.io / winaviation): nearly clear, so the Snell

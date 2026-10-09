@@ -88,7 +88,9 @@ GROUPS: dict[str, list[tuple[str, list[str]]]] = {
     "effects": [("", ["corner_radius", "dim_inactive", "glass"]),
                 ("Liquid glass", ["glass_refraction", "glass_thickness", "glass_edge",
                                   "glass_blur", "glass_opacity",
-                                  "glass_highlight", "glass_chroma"])],
+                                  "glass_highlight", "glass_chroma"]),
+                ("Animations", ["animations", "anim_open_close", "anim_workspace", "anim_move",
+                                "anim_duration"])],
     "notifications": [("", ["dnd_on_start", "position_x", "position_y", "timeout"]),
                       ("Advanced", ["output", "width", "max_visible", "timeout_low", "timeout_critical"])],
     "launcher": [("Show in results", ["apps", "settings", "calc", "files", "websearch"]),
@@ -940,6 +942,10 @@ class EffectsPage(SchemaPage):
         "glass_highlight": lambda v: v["glass"],
         "glass_edge": lambda v: v["glass"],
         "glass_chroma": lambda v: v["glass"],
+        "anim_open_close": lambda v: v["animations"],
+        "anim_workspace": lambda v: v["animations"],
+        "anim_move": lambda v: v["animations"],
+        "anim_duration": lambda v: v["animations"],
     }
 
     def update_status(self, status):

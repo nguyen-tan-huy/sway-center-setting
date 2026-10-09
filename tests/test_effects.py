@@ -240,3 +240,24 @@ class PortalGlassTest(unittest.TestCase):
                       theme=themes.BUILTIN["dark"])
         cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
         self.assertTrue(any(c.startswith('[app_id="xdg-desktop-portal-gtk"] glass enable') for c in cmds))
+
+
+class AnimationKindsTest(unittest.TestCase):
+    def test_each_kind_and_length(self):
+        ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features": ["animation-kinds"]},
+                      theme=themes.BUILTIN["dark"])
+        v = schema.defaults()["effects"] | {"animations": True, "anim_workspace": False, "anim_duration": 300}
+        cmds = EffectsModule().commands("effects", v, None, ctx)
+        self.assertIn("animation_duration_ms 300", cmds)
+        self.assertIn("animations open_close enable", cmds)
+        self.assertIn("animations workspace disable", cmds)
+        self.assertIn("animations move enable", cmds)
+        # off: no animation at all, whatever the kinds say
+        cmds = EffectsModule().commands("effects", v | {"animations": False}, None, ctx)
+        self.assertIn("animation_duration_ms 0", cmds)
+
+    def test_no_kinds_without_the_fork_feature(self):
+        ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features": []},
+                      theme=themes.BUILTIN["dark"])
+        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"animations": True}, None, ctx)
+        self.assertFalse(any(c.startswith("animations ") for c in cmds))
