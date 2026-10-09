@@ -227,6 +227,18 @@ window.bar .status-row {{ border-spacing: {round(p * 0.8)}px 0; }}
 """
 
 
+def bar_single_css(fill: str, rim: str, inset: str, radius: str = "999px") -> str:
+    """bar.shape = single: the bar window is one pane (one capsule of glass
+    when the compositor's glass is on: it shapes the glass by what's drawn),
+    the groups inside are clear."""
+    pills = ", ".join(f"window.bar .{c}" for c in ("workspaces", "clock", "status", "tray", "mode", "window-title"))
+    return f"""
+/* bar.shape = single: one bar of glass, the groups inside are clear */
+window.bar {{ background: {fill}; border: {rim}; border-radius: {radius}; box-shadow: {inset}; }}
+{pills} {{ background: none; border-color: transparent; box-shadow: none; }}
+"""
+
+
 def milk_fill(opacity: float) -> str:
     """OSD-style milky glass (volume/brightness pill): white fill whose
     thickness follows effects.glass_opacity (0..1). Never fully clear —
@@ -657,6 +669,18 @@ class BarModule(Component):
             m = {k: 0 if k == edge else gap for k in m}
         return m
 
+    def shape_css(self, v, ctx, t) -> str:
+        """One bar of glass, or (the default) a piece per group."""
+        if v.get("shape", "pieces") != "single":
+            return ""
+        if _glass(ctx):
+            return bar_single_css(f"alpha(white, {milk_opacity(ctx, t):.3f})", LENS_RIM, LENS_INSET)
+        k = ctx.theme.tokens if ctx.theme else {}
+        if _modern(ctx):
+            return bar_single_css(milk_fill(milk_opacity(ctx, t)), MILK_RIM, MILK_INSET)
+        # classic: the bar is already one panel; only the groups go flat
+        return bar_single_css(k.get("surface", "@window_bg_color"), "none", "none", "0")
+
     def native_config(self, v, ctx) -> dict[str, Any]:
         """config.json for swayctl-bar: waybar module names map onto its few
         modules; everything status-like becomes the one Quick Settings cluster."""
@@ -1033,7 +1057,8 @@ scale slider {{ background: white; box-shadow: 0 0 0 1px alpha(black, 0.12), 0 1
             return {"config.json": json.dumps(self.native_config(v, ctx), indent=2, ensure_ascii=False) + "\n",
                     "style.css": style + self.adaptive_css(ctx)
                     + bar_size_css(v["height"], 1.5 if _glass(ctx) else 0, _font(ctx)[1])
-                    + bar_padding_css(v.get("padding", 10))}
+                    + bar_padding_css(v.get("padding", 10))
+                    + self.shape_css(v, ctx, t)}
         style = _render_template(v["style_template"], t, ctx) if v["style_template"] else self.css(ctx, t)
         return {"config.json": json.dumps(self.config(v, ctx), indent=2, ensure_ascii=False) + "\n",
                 "style.css": style}

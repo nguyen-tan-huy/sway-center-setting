@@ -83,7 +83,10 @@ VI = {
     "When a window asks for attention": "Khi cửa sổ cần chú ý", "Window animations": "Hiệu ứng chuyển động cửa sổ",
     "Opening and closing apps": "Mở và đóng app", "Switching workspaces": "Chuyển workspace",
     "Moving and resizing windows": "Di chuyển và đổi cỡ cửa sổ", "Animation length (ms)": "Độ dài hiệu ứng (ms)",
-    "Animations": "Hiệu ứng động", "Padding (px)": "Khoảng đệm (px)",
+    "Animations": "Hiệu ứng động", "Style": "Kiểu",
+    "A piece of glass per group": "Mỗi nhóm một mảnh kính", "One bar of glass": "Một thanh kính liền",
+    "One bar of glass across the screen, or a piece of glass for each group (workspaces, clock, status).":
+        "Một thanh kính liền ngang màn hình, hoặc mỗi nhóm (workspace, đồng hồ, trạng thái) một mảnh kính.", "Padding (px)": "Khoảng đệm (px)",
     "Room around what's inside each pill of the bar: less fits more, more feels airier.":
         "Khoảng trống quanh nội dung trong mỗi viên của bar: ít thì gọn, nhiều thì thoáng.",
     "Apps pop in when they open and shrink away when they close.": "App phóng ra khi mở và thu nhỏ biến mất khi đóng.",
