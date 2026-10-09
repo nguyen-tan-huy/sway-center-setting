@@ -54,9 +54,10 @@ class WindowGlassTest(unittest.TestCase):
         # quoted: sway splits at commas
         what = ('"glass enable, glass refraction 50, glass blur 0, glass highlight 0.9, '
                 'border none, shadows disable"')
-        # the settings window and every other glass app (ChoSua) get the same rule
+        # the settings window and every other glass app (ChoSua, the portal) get the same rule
         self.assertEqual(rule, ['for_window [app_id="io.github.huyhappy.SwayctlCenter.Settings"] ' + what,
-                                'for_window [app_id="chosua"] ' + what])
+                                'for_window [app_id="chosua"] ' + what,
+                                'for_window [app_id="xdg-desktop-portal-gtk"] ' + what])
         self.assertIn('[app_id="chosua"] glass enable, glass refraction 50, '
                       'glass blur 0, glass highlight 0.9, border none, shadows disable', cmds)
         self.assertIn('[app_id="io.github.huyhappy.SwayctlCenter.Settings"] glass enable, glass refraction 50, '
@@ -95,7 +96,8 @@ class GlassTextTest(unittest.TestCase):
                       theme=themes.BUILTIN["dark"])
         cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
         self.assertTrue(any(c.startswith('[app_id="chosua"]') and "glass text auto" in c for c in cmds))
-        self.assertTrue(any(c.startswith('[app_id="xdg-desktop-portal-gtk"]') and "glass text auto" in c
+        # the portal is a frosted sheet with the theme's text: no ink
+        self.assertTrue(any(c.startswith('[app_id="xdg-desktop-portal-gtk"]') and "glass text none" in c
                             for c in cmds))
         self.assertIn('layer_effects "swayctl-bar" "glass_text auto"', cmds)
         self.assertIn('layer_effects "swayctl-quick" "glass_text auto"', cmds)
@@ -217,7 +219,8 @@ class PortalGlassTest(unittest.TestCase):
         from unittest import mock
         from swayctl_center import portalglass
         css = portalglass.css(True, "#0a84ff", "#ffffff", 0.1)
-        self.assertIn("#FF00FE", css)              # text in the key ink
+        self.assertNotIn("#FF00FE", css)           # the theme's text, not the key ink
+        self.assertIn("alpha(#1c1c1e, 0.76)", css)  # one sheet of the dark surface
         self.assertIn("@import", css)              # on the desktop's GTK 3 theme
         with tempfile.TemporaryDirectory() as d, mock.patch("subprocess.run") as run:
             home = Path(d)
@@ -231,9 +234,9 @@ class PortalGlassTest(unittest.TestCase):
             self.assertTrue(portalglass.sync(False, "", home))    # off: the drop-in goes
             self.assertFalse(portalglass.dropin_path(home).exists())
 
-    def test_no_portal_rule_without_key_ink(self):
+    def test_portal_sheet_without_key_ink(self):
         ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features":
                       ["glass", "glass-shaped", "glass-text", "glass-windows"]},
                       theme=themes.BUILTIN["dark"])
         cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
-        self.assertFalse(any("xdg-desktop-portal-gtk" in c for c in cmds))
+        self.assertTrue(any(c.startswith('[app_id="xdg-desktop-portal-gtk"] glass enable') for c in cmds))

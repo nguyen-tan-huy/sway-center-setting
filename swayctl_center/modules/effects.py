@@ -85,19 +85,19 @@ SETTINGS_APP_ID = "io.github.huyhappy.SwayctlCenter.Settings"
 # Windows that are liquid glass with the shell's settings: they draw only
 # their panes (the rest is clear). chosua: the Matrix client
 # (~/Downloads/Element).
-# xdg-desktop-portal-gtk: the file / app chooser, with its own theme
-# (portalglass.py) and only with key ink (its theme draws the key colour)
+# xdg-desktop-portal-gtk: the file / app chooser, one frosted sheet with
+# its own theme (portalglass.py) and the theme's text: no ink, no probing
 PORTAL_APP_ID = "xdg-desktop-portal-gtk"
 GLASS_APPS = (SETTINGS_APP_ID, "chosua", PORTAL_APP_ID)
 # The text each one draws, for the compositor's `glass text`: "none" = the app
 # picks light/dark per pane itself from what's behind (GET_BACKDROP); "light"
 # = always light text, and the glass darkens just enough behind it where the
 # backdrop is too bright (the app asks the compositor nothing)
-GLASS_APP_TEXT = {SETTINGS_APP_ID: "none", "chosua": "light"}
+GLASS_APP_TEXT = {SETTINGS_APP_ID: "none", "chosua": "light", PORTAL_APP_ID: "none"}
 # With the fork's key ink ("glass-ink"): these draw their text in the key
 # colour and the compositor inks it light or dark from what's behind the glass
 # (`glass text auto`); they ask nothing (no GET_BACKDROP) and pick nothing
-INK_APPS = (SETTINGS_APP_ID, "chosua", PORTAL_APP_ID)
+INK_APPS = (SETTINGS_APP_ID, "chosua")
 INK_LAYERS = ("swayctl-bar", "swayctl-quick", "swayctl-traymenu", "swayctl-launcher")
 
 
@@ -221,11 +221,11 @@ class EffectsModule:
 
     @staticmethod
     def portal_theme(v: dict[str, Any], ctx: Context) -> list[str]:
-        """The portal's dialogs as glass when the compositor can ink them."""
+        """The portal's dialogs as a frosted sheet when windows can be glass."""
         from .. import portalglass
         from .components import shell_milk
         feats = fork_features(ctx.live)
-        on = bool(v.get("glass")) and all(f in feats for f in ("glass", "glass-windows", "glass-text", "glass-ink"))
+        on = bool(v.get("glass")) and all(f in feats for f in ("glass", "glass-windows"))
         css = ""
         if on and ctx.theme is not None:
             t = ctx.theme.tokens
@@ -272,15 +272,13 @@ class EffectsModule:
                     + tune.replace("{edge}", str(glass_edge(app, v.get("glass_edge", 70))))
                     + (f", glass text {app_text}" if app_text else "") + ", border none, shadows disable")
 
-        # the portal only with key ink: its theme draws the key colour
-        apps = [a for a in GLASS_APPS if a != PORTAL_APP_ID or (ink and text)]
-        cmds = [f'[app_id="{app}"] {what(app)}' for app in apps]
-        wanted = "\n".join(what(app) for app in apps)
+        cmds = [f'[app_id="{app}"] {what(app)}' for app in GLASS_APPS]
+        wanted = "\n".join(what(app) for app in GLASS_APPS)
         if wanted != self._app_glass:
             self._app_glass = wanted
             # quoted: sway splits commands at commas, which would leave the rest
             # of the list outside the for_window
-            cmds = [f'for_window [app_id="{app}"] "{what(app)}"' for app in apps] + cmds
+            cmds = [f'for_window [app_id="{app}"] "{what(app)}"' for app in GLASS_APPS] + cmds
         return cmds
 
     def import_current(self, ipc: swayipc.Connection, config: swayconfig.Config,
