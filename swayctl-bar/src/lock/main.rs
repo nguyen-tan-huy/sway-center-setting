@@ -228,6 +228,9 @@ fn build_window(app: &adw::Application, ui: &Rc<Ui>, user: &str, o: &Opts,
 }
 
 fn main() -> glib::ExitCode {
+    // before GTK reads it (and while single-threaded): the session's
+    // GTK_IM_MODULE=fcitx5 would win over the setting below
+    unsafe { std::env::set_var("GTK_IM_MODULE", "gtk-im-context-simple") };
     let o = opts();
     let notify = if o.daemonize { daemonize() } else { None };
     let notify = Rc::new(RefCell::new(notify));
@@ -239,6 +242,9 @@ fn main() -> glib::ExitCode {
     let o = Rc::new(o);
     app.connect_activate(move |app| {
         let display = gdk::Display::default().expect("no display");
+        // no input method: an IME left on (fcitx5 Unikey/Telex) rewrites the
+        // password as it's typed ("s" → a tone mark) and PAM gets the wrong one
+        gtk::Settings::for_display(&display).set_gtk_im_module(Some("gtk-im-context-simple"));
         let css = gtk::CssProvider::new();
         css.load_from_string(DEFAULT_CSS);
         gtk::style_context_add_provider_for_display(&display, &css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
