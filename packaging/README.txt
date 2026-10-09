@@ -11,11 +11,19 @@ What this folder contains
 
 Install
 -------
+  On a new machine with SwayFX (sudo pacman -S swayfx), copy this folder (or the
+  swayctl-setup-*.tar.gz it came in: tar xf swayctl-setup-*.tar.gz) and run:
+
   ./install.sh            asks before anything optional
   ./install.sh --yes      takes every recommended extra
 
 Then log out and pick "Sway (swayctl-fx)" on the login screen. Plain "Sway" stays
 as the fallback if you ever need it (no liquid glass / smooth scrolling).
+
+Building this folder
+--------------------
+  packaging/make-bundle.sh in the swayctl-center repo builds the three packages
+  and writes packaging/dist/swayctl-setup-<date>.tar.gz.
 
 Uninstall
 ---------

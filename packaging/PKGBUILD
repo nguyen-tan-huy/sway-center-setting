@@ -1,7 +1,7 @@
 # Maintainer: huyhappy <nguyentanhuy.work@gmail.com>
 pkgname=swayctl-center
 pkgver=0.1.0
-pkgrel=33
+pkgrel=34
 pkgdesc="One settings app for sway: install it and configure sway without touching config files"
 arch=(any)
 url="https://github.com/huyhappy/swayctl-center"
@@ -11,7 +11,7 @@ license=(MIT)
 # ttf-nerd-fonts-symbols: the bar's icons
 # the bar, Quick Settings, notifications and lock screen are swayctl-bar's (waybar/swaync/swaylock
 # are no longer used)
-depends=(sway swayctl-bar swaybg wlsunset swayidle cliphist wl-clipboard foot fuzzel
+depends=(sway swayctl-bar swayctl-fx swaybg wlsunset swayidle cliphist wl-clipboard foot fuzzel
          python python-gobject gtk4 gsettings-desktop-schemas xdg-desktop-portal-gtk polkit polkit-gnome
          ttf-nerd-fonts-symbols)
 optdepends=('adw-gtk-theme: GTK 3 apps, browsers and Electron switch light/dark (adw-gtk3 / adw-gtk3-dark)'
@@ -26,7 +26,7 @@ optdepends=('adw-gtk-theme: GTK 3 apps, browsers and Electron switch light/dark 
             'keyd: swap and remap keys (Keyboard page)'
             'fcitx5: input method for Vietnamese, Chinese, Japanese... (Input Method page)'
             'pavucontrol: opened by clicking the volume in the bar'
-            'swayctl-fx: SwayFX session: effects, liquid glass, smooth scrolling')
+            'fprintd: unlock with a fingerprint (Power & Lock page)')
 source=()
 
 _srcroot="$startdir/.."

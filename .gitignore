@@ -23,3 +23,4 @@ tools/vptr/*-protocol.c
 /swayctl-setup/
 # Claude Code per-machine settings (the roadmap skill is kept)
 .claude/settings.local.json
+/packaging/dist/
