@@ -1,12 +1,42 @@
-/* swayctl-lock; the theme's named colors come from the bar's generated style.css */
+/* swayctl-lock as liquid glass, like the bar and Quick Settings: the
+   wallpaper blurred (the compositor's glass can't reach a lock surface), white
+   ink, milky panes with a bright rim. Theme colors come from the bar's
+   generated style.css. */
 window.lock-window {
-  background: linear-gradient(160deg, alpha(@accent_bg_color, 0.35), @window_bg_color 55%);
-  color: @window_fg_color;
+  background: linear-gradient(160deg, alpha(@accent_bg_color, 0.45), @window_bg_color 60%);
+  color: white;
 }
-.lock-time { font-size: 72px; font-weight: 300; font-feature-settings: "tnum"; }
-.lock-date { font-size: 18px; opacity: 0.8; margin-bottom: 28px; }
-.lock-user { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
-.lock-entry { border-radius: 999px; padding: 4px 14px; min-height: 40px;
-  background: alpha(@window_fg_color, 0.08); }
-.lock-status { opacity: 0.75; margin-top: 4px; min-height: 2.6em; }
-.lock-methods { opacity: 0.6; }
+window.lock-window.has-wall { background: black; }
+.lock-wall { filter: blur(36px) saturate(1.5); transform: scale(1.12); }
+.lock-dim { background: linear-gradient(180deg, alpha(black, 0.10), alpha(black, 0.32)); }
+
+.lock-card label { color: white; text-shadow: 0 1px 3px alpha(black, 0.35); }
+.lock-time { font-size: 96px; font-weight: 700; font-feature-settings: "tnum"; letter-spacing: -2px; }
+.lock-date {
+  font-size: 17px; font-weight: 600; margin-bottom: 36px; padding: 6px 16px; border-radius: 999px;
+  background: alpha(white, 0.16); border: 1px solid alpha(white, 0.42);
+  box-shadow: inset 0 1px 0 alpha(white, 0.50), 0 6px 20px alpha(black, 0.14);
+}
+.lock-avatar { border: 2px solid alpha(white, 0.70); border-radius: 999px;
+  box-shadow: 0 8px 28px alpha(black, 0.28); }
+.lock-user { font-size: 18px; font-weight: 700; margin: 4px 0 6px 0; }
+
+/* the password field: a capsule of milky glass */
+.lock-entry {
+  border-radius: 999px; padding: 4px 18px; min-height: 44px; color: white;
+  background: alpha(white, 0.18); border: 1px solid alpha(white, 0.48);
+  box-shadow: inset 0 1px 0 alpha(white, 0.55), 0 8px 24px alpha(black, 0.18);
+  outline: none;
+}
+.lock-entry:focus-within { background: alpha(white, 0.24); border-color: alpha(white, 0.75); }
+.lock-entry text { color: white; caret-color: white; }
+.lock-entry text placeholder { color: alpha(white, 0.70); }
+.lock-entry image { color: alpha(white, 0.85); }
+
+.lock-status { margin-top: 6px; min-height: 2.6em; font-size: 14px; opacity: 0.90; }
+.lock-methods {
+  padding: 8px; border-radius: 999px; opacity: 0.95;
+  background: alpha(white, 0.14); border: 1px solid alpha(white, 0.40);
+  box-shadow: inset 0 1px 0 alpha(white, 0.45);
+}
+.lock-methods image { color: white; -gtk-icon-size: 22px; }

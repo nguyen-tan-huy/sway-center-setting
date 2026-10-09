@@ -1275,6 +1275,10 @@ def lock_command(ctx: Context) -> list[str]:
         argv = ["swayctl-lock", "--daemonize", "--style", str(ctx.data_dir / "generated" / "bar" / "style.css")]
         if a.get("fingerprint_lock"):
             argv.append("--fingerprint")
+        # blurred behind its panes of glass
+        image = ((ctx.values or {}).get("background") or {}).get("image")
+        if image:
+            argv += ["--wallpaper", str(ctx.data_dir / image)]
         return argv
     t = ctx.theme
     idle = (ctx.values or {}).get("idle") or {}

@@ -8,7 +8,7 @@ lock=/home/repo/swayctl-bar/target/release/swayctl-lock
 foot >/dev/null 2>&1 &
 sleep 1
 t0=$(date +%s%N)
-$lock --fingerprint --service-prefix ${PREFIX:-swayctl-test-} --daemonize 2>/tmp/out/lock.log
+$lock --fingerprint ${WALLFILE:+--wallpaper $WALLFILE} --service-prefix ${PREFIX:-swayctl-test-} --daemonize 2>/tmp/out/lock.log
 echo "daemonize returned $? after $(( ($(date +%s%N) - t0) / 1000000 )) ms (screen locked)"
 sleep 1
 grim /tmp/out/lock-screen.png

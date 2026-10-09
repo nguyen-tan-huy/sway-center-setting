@@ -3,7 +3,7 @@
 //! the fingerprint reader (fprintd) at the same time, each in its own PAM
 //! thread; the first that succeeds unlocks.
 //!
-//!   swayctl-lock [--fingerprint] [--style FILE] [--daemonize]
+//!   swayctl-lock [--fingerprint] [--style FILE] [--wallpaper FILE] [--daemonize]
 //!                [--service-prefix swayctl-lock-]
 //!
 //! --daemonize returns once the screen is locked (for swayidle before-sleep).
@@ -69,6 +69,8 @@ impl Lock {
 struct Opts {
     fingerprint: bool,
     style: Option<String>,
+    /// drawn blurred behind the glass (the compositor's glass can't reach a lock surface)
+    wallpaper: Option<String>,
     daemonize: bool,
     prefix: String,
 }
@@ -79,6 +81,7 @@ fn opts() -> Opts {
     Opts {
         fingerprint: args.iter().any(|a| a == "--fingerprint"),
         style: value("--style"),
+        wallpaper: value("--wallpaper").filter(|p| std::path::Path::new(p).exists()),
         daemonize: args.iter().any(|a| a == "--daemonize"),
         prefix: value("--service-prefix").unwrap_or_else(|| "swayctl-lock-".into()),
     }
@@ -162,7 +165,7 @@ fn build_window(app: &adw::Application, ui: &Rc<Ui>, user: &str, o: &Opts,
     let col = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(10)
         .halign(gtk::Align::Center).valign(gtk::Align::Center).css_classes(["lock-card"]).build();
     let time = gtk::Label::builder().css_classes(["lock-time"]).build();
-    let date = gtk::Label::builder().css_classes(["lock-date"]).build();
+    let date = gtk::Label::builder().halign(gtk::Align::Center).css_classes(["lock-date"]).build();
     let tick = {
         let (time, date) = (time.clone(), date.clone());
         move || {
@@ -175,7 +178,7 @@ fn build_window(app: &adw::Application, ui: &Rc<Ui>, user: &str, o: &Opts,
     tick();
     let t2 = tick.clone();
     glib::timeout_add_seconds_local(5, move || { t2(); glib::ControlFlow::Continue });
-    let avatar = adw::Avatar::builder().size(72).text(user).show_initials(true).css_classes(["lock-avatar"]).build();
+    let avatar = adw::Avatar::builder().size(72).text(user).show_initials(true).halign(gtk::Align::Center).css_classes(["lock-avatar"]).build();
     let name = gtk::Label::builder().label(user).css_classes(["lock-user"]).build();
     let entry = gtk::PasswordEntry::builder().show_peek_icon(true).width_request(280)
         .placeholder_text("Password").css_classes(["lock-entry"]).build();
@@ -185,6 +188,7 @@ fn build_window(app: &adw::Application, ui: &Rc<Ui>, user: &str, o: &Opts,
     if o.fingerprint {
         methods.append(&gtk::Image::from_icon_name("auth-fingerprint-symbolic"));
     }
+    methods.set_visible(o.fingerprint);
     for w in [time.upcast_ref::<gtk::Widget>(), date.upcast_ref(), avatar.upcast_ref(), name.upcast_ref(),
               entry.upcast_ref(), status.upcast_ref(), methods.upcast_ref()] {
         col.append(w);
@@ -195,7 +199,22 @@ fn build_window(app: &adw::Application, ui: &Rc<Ui>, user: &str, o: &Opts,
             on_password(text);
         }
     });
-    win.set_child(Some(&col));
+    // liquid glass: the wallpaper, blurred, under milky panes
+    let stack = gtk::Overlay::new();
+    if let Some(path) = &o.wallpaper {
+        win.add_css_class("has-wall");
+        let wall = gtk::Picture::for_filename(path);
+        wall.set_content_fit(gtk::ContentFit::Cover);
+        wall.set_can_shrink(true);
+        wall.add_css_class("lock-wall");
+        stack.set_child(Some(&wall));
+        let dim = gtk::Box::builder().css_classes(["lock-dim"]).build();
+        stack.add_overlay(&dim);
+    } else {
+        stack.set_child(Some(&gtk::Box::new(gtk::Orientation::Vertical, 0)));
+    }
+    stack.add_overlay(&col);
+    win.set_child(Some(&stack));
     // fade the card in
     col.set_opacity(0.0);
     let c2 = col.clone();
