@@ -5,6 +5,7 @@ from gi.repository import GLib, Gtk, Pango
 
 from ..system import bluetooth
 from .async_util import run_async
+from .live import Live
 
 
 class DeviceRow(Gtk.Box):
@@ -78,20 +79,16 @@ class BluetoothPage(Gtk.Box):
 
         # Deferred so the window can appear before the first reload() runs.
         GLib.idle_add(self._reload_once)
-        GLib.timeout_add_seconds(4, self._auto_refresh)
+        # follows BlueZ: power, devices found while scanning, (dis)connects
+        self._live = Live(self, self.reload).dbus("org.bluez")
 
     def _reload_once(self):
         self.reload()
         return GLib.SOURCE_REMOVE
 
-    def _auto_refresh(self):
-        if self._discovering:
-            self.reload()
-        return True
-
     def reload(self):
         # D-Bus round-trips per call; run off the GTK thread so switching
-        # to/loading this page (and the 4s auto-refresh while scanning)
+        # to/loading this page (and each change BlueZ reports)
         # never freezes the UI.
         run_async(self._gather, self._apply_loaded)
 

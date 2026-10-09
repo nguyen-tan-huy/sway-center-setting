@@ -5,6 +5,7 @@ from gi.repository import GLib, Gtk
 
 from ..system import audio
 from .async_util import run_async
+from .live import Live
 
 
 class SoundPage(Gtk.Box):
@@ -77,6 +78,12 @@ class SoundPage(Gtk.Box):
 
         # Deferred so the window can appear before the first reload() runs.
         GLib.idle_add(self._reload_once)
+        # follows the sound server (volume keys, the bar, plugging headphones);
+        # not while a slider is being dragged
+        self._live = Live(self, self.reload, self._dragging).pactl()
+
+    def _dragging(self):
+        return any(s.get_state_flags() & Gtk.StateFlags.ACTIVE for s in (self.output_scale, self.input_scale))
 
     def _reload_once(self):
         self.reload()

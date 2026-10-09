@@ -5,6 +5,7 @@ from gi.repository import GLib, Gtk, Pango
 
 from ..system import network
 from .async_util import run_async
+from .live import Live
 
 
 class WifiRow(Gtk.Box):
@@ -143,6 +144,11 @@ class NetworkPage(Gtk.Box):
 
         # Deferred so the window can appear before the first reload() runs.
         GLib.idle_add(self._reload_once)
+        # follows NetworkManager; holds off while a password is being typed
+        self._live = Live(self, self.reload, self._typing).dbus("org.freedesktop.NetworkManager")
+
+    def _typing(self):
+        return any(isinstance(r, WifiRow) and r.pw_box.get_visible() for r in self.wifi_box)
 
     def _reload_once(self):
         self.reload()

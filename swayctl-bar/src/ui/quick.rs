@@ -550,36 +550,55 @@ impl QuickSettings {
         body.append(&more);
         if let Some(sys) = self.svc.system.clone() {
             let me = Rc::downgrade(self);
-            glib::spawn_future_local(async move {
-                let aps = dbus::access_points(&sys).await;
-                spinner.set_visible(false);
-                if aps.is_empty() {
-                    list.append(&gtk::Label::builder().label("No networks found").css_classes(["dim-label"]).margin_top(12).margin_bottom(12).build());
+            // rebuilt whenever NetworkManager changes something, while the page lives
+            let (weak_list, weak_spinner) = (list.downgrade(), spinner.downgrade());
+            let busy = Rc::new(std::cell::Cell::new(false));
+            dbus::on_any_change(sys.clone(), "org.freedesktop.NetworkManager", move || {
+                let (Some(list), Some(spinner)) = (weak_list.upgrade(), weak_spinner.upgrade()) else { return false };
+                if busy.replace(true) {
+                    return true;
                 }
-                for ap in aps {
-                    let row = adw::ActionRow::builder().title(glib::markup_escape_text(&ap.ssid)).activatable(true).build();
-                    row.add_prefix(&gtk::Image::from_icon_name(icons::wifi_strength(ap.strength)));
-                    if ap.secure {
-                        row.add_suffix(&gtk::Image::from_icon_name("system-lock-screen-symbolic"));
+                let (sys, me, busy) = (sys.clone(), me.clone(), busy.clone());
+                glib::spawn_future_local(async move {
+                    let aps = dbus::access_points(&sys).await;
+                    busy.set(false);
+                    spinner.set_visible(false);
+                    while let Some(c) = list.first_child() {
+                        list.remove(&c);
                     }
-                    if ap.active {
-                        row.add_suffix(&gtk::Image::from_icon_name("object-select-symbolic"));
-                    }
-                    let (sys, me) = (sys.clone(), me.clone());
-                    row.connect_activated(move |_| {
-                        let (sys, ap, me) = (sys.clone(), ap.clone(), me.clone());
-                        glib::spawn_future_local(async move {
-                            if !dbus::activate(&sys, &ap).await {
-                                // needs a password: the full settings page asks for it
-                                if let Some(me) = me.upgrade() { me.settings("system:network") }
-                            }
-                        });
-                    });
-                    list.append(&row);
-                }
+                    Self::fill_wifi(&list, aps, &sys, &me);
+                });
+                true
             });
         }
         self.sub_page("Wi-Fi", body.upcast_ref())
+    }
+
+    fn fill_wifi(list: &gtk::ListBox, aps: Vec<dbus::AccessPoint>, sys: &zbus::Connection, me: &std::rc::Weak<Self>) {
+        if aps.is_empty() {
+            list.append(&gtk::Label::builder().label("No networks found").css_classes(["dim-label"]).margin_top(12).margin_bottom(12).build());
+        }
+        for ap in aps {
+            let row = adw::ActionRow::builder().title(glib::markup_escape_text(&ap.ssid)).activatable(true).build();
+            row.add_prefix(&gtk::Image::from_icon_name(icons::wifi_strength(ap.strength)));
+            if ap.secure {
+                row.add_suffix(&gtk::Image::from_icon_name("system-lock-screen-symbolic"));
+            }
+            if ap.active {
+                row.add_suffix(&gtk::Image::from_icon_name("object-select-symbolic"));
+            }
+            let (sys, me) = (sys.clone(), me.clone());
+            row.connect_activated(move |_| {
+                let (sys, ap, me) = (sys.clone(), ap.clone(), me.clone());
+                glib::spawn_future_local(async move {
+                    if !dbus::activate(&sys, &ap).await {
+                        // needs a password: the full settings page asks for it
+                        if let Some(me) = me.upgrade() { me.settings("system:network") }
+                    }
+                });
+            });
+            list.append(&row);
+        }
     }
 
     fn sink_page(self: &Rc<Self>) -> adw::NavigationPage {

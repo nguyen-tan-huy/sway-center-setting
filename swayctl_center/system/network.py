@@ -51,7 +51,7 @@ def rescan() -> None:
 
 
 def list_wifi() -> list[WifiNetwork]:
-    out = _run("-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list")
+    out = _run("-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no")
     seen: dict[str, WifiNetwork] = {}
     for line in out.splitlines():
         if not line:

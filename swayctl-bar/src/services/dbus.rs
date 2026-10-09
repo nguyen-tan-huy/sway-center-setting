@@ -128,38 +128,83 @@ pub struct AccessPoint {
 
 pub fn network(system: Connection) -> Rc<Watch<Network>> {
     let w = Watch::new(Network::default());
-    let w2 = w.clone();
-    let conn = system.clone();
-    follow(system, NM, NM_PATH.into(), NM, move |p| {
-        let wifi_enabled = val::<bool>(&p, "WirelessEnabled").unwrap_or(false);
-        let primary: Option<OwnedObjectPath> = val(&p, "PrimaryConnection");
+    let (w2, conn) = (w.clone(), system.clone());
+    // any NetworkManager object, not just the root: the access point's
+    // strength, a connection coming up, a device going away
+    on_any_change(system, NM, move || {
         let (w3, conn) = (w2.clone(), conn.clone());
         gtk::glib::spawn_future_local(async move {
-            let mut net = Network { available: true, wifi_enabled, ..Default::default() };
-            if let Some(path) = primary.filter(|p| p.as_str() != "/") {
-                if let Ok(a) = get_all(&conn, NM, path.as_str(), "org.freedesktop.NetworkManager.Connection.Active").await {
-                    net.name = val(&a, "Id").unwrap_or_default();
-                    let t: String = val(&a, "Type").unwrap_or_default();
-                    net.kind = match t.as_str() {
-                        "802-11-wireless" => "wifi",
-                        "802-3-ethernet" => "ethernet",
-                        "vpn" | "wireguard" => "vpn",
-                        _ => "ethernet",
-                    }
-                    .into();
-                    if net.kind == "wifi" {
-                        if let Some(ap) = val::<OwnedObjectPath>(&a, "SpecificObject") {
-                            if let Ok(ap) = get_all(&conn, NM, ap.as_str(), "org.freedesktop.NetworkManager.AccessPoint").await {
-                                net.strength = val(&ap, "Strength").unwrap_or(0);
-                            }
-                        }
+            if let Some(net) = read_network(&conn).await {
+                w3.set(net);
+            }
+        });
+        true
+    });
+    w
+}
+
+async fn read_network(conn: &Connection) -> Option<Network> {
+    let p = get_all(conn, NM, NM_PATH, NM).await.ok()?;
+    let wifi_enabled = val::<bool>(&p, "WirelessEnabled").unwrap_or(false);
+    let primary: Option<OwnedObjectPath> = val(&p, "PrimaryConnection");
+    let mut net = Network { available: true, wifi_enabled, ..Default::default() };
+    if let Some(path) = primary.filter(|p| p.as_str() != "/") {
+        if let Ok(a) = get_all(conn, NM, path.as_str(), "org.freedesktop.NetworkManager.Connection.Active").await {
+            net.name = val(&a, "Id").unwrap_or_default();
+            let t: String = val(&a, "Type").unwrap_or_default();
+            net.kind = match t.as_str() {
+                "802-11-wireless" => "wifi",
+                "802-3-ethernet" => "ethernet",
+                "vpn" | "wireguard" => "vpn",
+                _ => "ethernet",
+            }
+            .into();
+            if net.kind == "wifi" {
+                if let Some(ap) = val::<OwnedObjectPath>(&a, "SpecificObject") {
+                    if let Ok(ap) = get_all(conn, NM, ap.as_str(), "org.freedesktop.NetworkManager.AccessPoint").await {
+                        net.strength = val(&ap, "Strength").unwrap_or(0);
                     }
                 }
             }
-            w3.set(net);
-        });
+        }
+    }
+    Some(net)
+}
+
+/// Calls `on_change` now and after each burst of PropertiesChanged /
+/// InterfacesAdded / InterfacesRemoved from any object of `dest`, until it
+/// returns false. A burst (a scan updates every access point) is one call.
+pub fn on_any_change(conn: Connection, dest: &'static str, on_change: impl Fn() -> bool + 'static) {
+    use futures_util::FutureExt;
+    gtk::glib::spawn_future_local(async move {
+        if !on_change() {
+            return;
+        }
+        let mut streams = Vec::new();
+        for (iface, member) in [("org.freedesktop.DBus.Properties", "PropertiesChanged"),
+                                ("org.freedesktop.DBus.ObjectManager", "InterfacesAdded"),
+                                ("org.freedesktop.DBus.ObjectManager", "InterfacesRemoved")] {
+            let rule = zbus::MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .sender(dest).and_then(|b| b.interface(iface)).and_then(|b| b.member(member))
+                .map(|b| b.build());
+            let Ok(rule) = rule else { continue };
+            if let Ok(s) = zbus::MessageStream::for_match_rule(rule, &conn, None).await {
+                streams.push(s);
+            }
+        }
+        if streams.is_empty() {
+            return;
+        }
+        let mut all = futures_util::stream::select_all(streams);
+        while all.next().await.is_some() {
+            gtk::glib::timeout_future(std::time::Duration::from_millis(400)).await;
+            while let Some(Some(_)) = all.next().now_or_never() {}
+            if !on_change() {
+                return;
+            }
+        }
     });
-    w
 }
 
 pub fn set_wifi(system: Connection, on: bool) {
@@ -228,8 +273,17 @@ pub struct Bluetooth {
 pub fn bluetooth(system: Connection) -> Rc<Watch<Bluetooth>> {
     let w = Watch::new(Bluetooth::default());
     let w2 = w.clone();
-    follow(system, "org.bluez", "/org/bluez/hci0".into(), "org.bluez.Adapter1", move |p| {
-        w2.set(Bluetooth { available: true, powered: val(&p, "Powered").unwrap_or(false) });
+    // any BlueZ object: the adapter also comes and goes (bluetoothd restart, rfkill)
+    let conn = system.clone();
+    on_any_change(system, "org.bluez", move || {
+        let (w3, conn) = (w2.clone(), conn.clone());
+        gtk::glib::spawn_future_local(async move {
+            w3.set(match get_all(&conn, "org.bluez", "/org/bluez/hci0", "org.bluez.Adapter1").await {
+                Ok(p) => Bluetooth { available: true, powered: val(&p, "Powered").unwrap_or(false) },
+                Err(_) => Bluetooth::default(),
+            });
+        });
+        true
     });
     w
 }
