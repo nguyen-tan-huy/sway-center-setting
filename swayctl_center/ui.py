@@ -8,6 +8,7 @@ and startup applications get their own pages.
 from __future__ import annotations
 
 import copy
+import math
 import os
 from datetime import datetime
 import subprocess
@@ -290,6 +291,8 @@ def _is_glass_pane(w: Gtk.Widget) -> bool:
     if name in _PANE_NAMES:
         return True
     parent = w.get_parent()
+    if name == "row" and w.has_css_class("nav-header"):
+        return False  # the sidebar's group names: only their label is a chip
     if name == "row" and parent is not None and parent.get_css_name() == "list":
         # sidebar entries and rows of unframed lists are pills; framed ones are the frame's
         return not parent.has_css_class("boxed-list") and not _inside(parent, "frame")
@@ -1600,11 +1603,18 @@ class MonitorMap(Gtk.DrawingArea):
         for ident, (x, y, w, h) in self.rects.items():
             rx, ry, rw, rh = ox + x * k + 2, oy + y * k + 2, w * k - 4, h * k - 4
             active = ident == self.dragging
-            cr.set_source_rgba(0.21, 0.52, 0.89, 0.55 if active else 0.3)
-            cr.rectangle(rx, ry, rw, rh)
+            # a rounded tile of the accent, with the glass's bright rim
+            r = min(12.0, rw / 4, rh / 4)
+            cr.new_sub_path()
+            cr.arc(rx + rw - r, ry + r, r, -math.pi / 2, 0)
+            cr.arc(rx + rw - r, ry + rh - r, r, 0, math.pi / 2)
+            cr.arc(rx + r, ry + rh - r, r, math.pi / 2, math.pi)
+            cr.arc(rx + r, ry + r, r, math.pi, 3 * math.pi / 2)
+            cr.close_path()
+            cr.set_source_rgba(0.21, 0.52, 0.89, 0.6 if active else 0.35)
             cr.fill_preserve()
-            cr.set_source_rgba(0.21, 0.52, 0.89, 1)
-            cr.set_line_width(2)
+            cr.set_source_rgba(1, 1, 1, 0.55)
+            cr.set_line_width(1.5)
             cr.stroke()
             layout = self.create_pango_layout(self.names.get(ident, ident))  # the app's font
             layout.set_width(int(max(rw - 8, 1) * Pango.SCALE))
@@ -1970,7 +1980,10 @@ class KeyRemapPage(ListPage):
         spacer = Gtk.Box(hexpand=True)
         box.append(spacer)
         box.append(add)
-        return box
+        # on a pane, or the check box's label floats over the wallpaper with glass on
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(8)
+        return _frame(box)
 
     def _add(self, _w) -> None:
         src = self.key_list[self.from_dd.get_selected()]
