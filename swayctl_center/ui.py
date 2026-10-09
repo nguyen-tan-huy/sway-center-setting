@@ -307,6 +307,23 @@ def _is_glass_pane(w: Gtk.Widget) -> bool:
     return False
 
 
+def _settings_ink_css(accent_fg: str) -> str:
+    """Key ink beyond the bar's widgets: fields, checks, chips and what sits
+    on the accent (a suggested button, the selected sidebar entry)."""
+    from .modules.components import INK_KEY as k
+    return f"""
+window.ink-key entry, window.ink-key spinbutton, window.ink-key text, window.ink-key dropdown,
+window.ink-key checkbutton, window.ink-key expander-widget, window.ink-key row,
+window.ink-key label.title-1, window.ink-key label.title-2, window.ink-key label.heading,
+window.ink-key label.dim-label, window.ink-key box > label {{
+  color: {k}; text-shadow: none; -gtk-icon-shadow: none;
+}}
+window.ink-key button.suggested-action label, window.ink-key button.suggested-action image,
+window.ink-key button.destructive-action label, window.ink-key row:selected label,
+window.ink-key row:selected image {{ color: {accent_fg}; }}
+"""
+
+
 def _inside(w: Gtk.Widget, *names: str) -> bool:
     p = w.get_parent()
     while p is not None:
@@ -2405,6 +2422,10 @@ class SettingsWindow(Adw.ApplicationWindow):
             # this window follows the active theme too, gtk.css option or not
             from .theming import adwaita_css
             css = adwaita_css(theme["tokens"]) + css + self._glass_css(theme, status)
+            if getattr(self, "_ink", False):
+                self.add_css_class("ink-key")
+            else:
+                self.remove_css_class("ink-key")
             Adw.StyleManager.get_default().set_color_scheme(
                 Adw.ColorScheme.FORCE_DARK if theme.get("dark") else Adw.ColorScheme.FORCE_LIGHT)
         if not hasattr(self, "_swatch_css"):
@@ -2416,6 +2437,7 @@ class SettingsWindow(Adw.ApplicationWindow):
     def _glass_css(self, theme: dict[str, Any], status: dict[str, Any] | None) -> str:
         """Liquid glass like the bar's, when it's on and swayctl-fx can put
         glass behind windows (it does: effects sends the for_window rule)."""
+        self._ink = False
         features = ((status or {}).get("compositor") or {}).get("features") or []
         if "glass-windows" not in features:
             self._backdrop = None
@@ -2429,6 +2451,15 @@ class SettingsWindow(Adw.ApplicationWindow):
             return ""
         from .modules.components import adaptive_css, app_glass_css, shell_milk
         pct = fx.get("glass_opacity", 50)
+        k = theme["tokens"]
+        if "glass-ink" in features:
+            # the compositor inks the text from what's behind (glass text auto,
+            # effects.INK_APPS): draw it in the key, ask nothing about the backdrop
+            from .modules.components import key_ink_css
+            self._backdrop = None
+            self._ink = True
+            return (app_glass_css(k, shell_milk(pct, True)) + key_ink_css(k["accent_fg"])
+                    + _settings_ink_css(k["accent_fg"]))
         try:
             bg = self.client.get_all()["background"]
         except (DaemonUnavailable, CallError, KeyError):
@@ -2438,7 +2469,6 @@ class SettingsWindow(Adw.ApplicationWindow):
         from .modules.components import glass_tint
         self._backdrop = (image, bg.get("mode", "fill"), bg.get("color") or theme.get("bg", "#000000"),
                           glass_tint(pct, True), glass_tint(pct, False))
-        k = theme["tokens"]
         # same milk + same per-pane adaptive text as the bar, Quick Settings,
         # notifications and OSD (shell_milk / adaptive_css)
         return app_glass_css(k, shell_milk(pct, True)) + adaptive_css(pct, k["accent"], k["accent_fg"])

@@ -36,6 +36,26 @@ class GlassUnifiedTest(unittest.TestCase):
         want = app_glass_css(theme["tokens"], shell_milk(10, True))
         self.assertIn(want, css)
 
+    def test_app_glass_css_key_ink(self):
+        # compositor có glass-ink: chữ vẽ bằng màu khóa, không hỏi ảnh nền
+        from swayctl_center.modules.components import INK_KEY
+        from swayctl_center.ui import SettingsWindow
+        w = SettingsWindow.__new__(SettingsWindow)
+
+        class Client:
+            def get_all(self):
+                return {"effects": {"glass": True, "glass_opacity": 10},
+                        "background": {"image": "x.png", "mode": "fill"}}
+
+        w.client = Client()
+        theme = {"tokens": {"accent": "#3584e4", "accent_fg": "#ffffff"}, "bg": "#101014"}
+        css = w._glass_css(theme, {"compositor": {"features": ["glass-windows", "glass-ink"]}})
+        self.assertTrue(w._ink)
+        self.assertIsNone(w._backdrop)
+        self.assertIn(f"window.ink-key label", css)
+        self.assertIn(INK_KEY, css)
+        self.assertNotIn(".on-dark.on-dark", css)
+
     def test_app_glass_css_off_without_compositor_glass(self):
         from swayctl_center.ui import SettingsWindow
         w = SettingsWindow.__new__(SettingsWindow)

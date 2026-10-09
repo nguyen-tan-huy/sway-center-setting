@@ -89,7 +89,7 @@ class GlassTextTest(unittest.TestCase):
 
     def test_key_ink(self):
         # with the fork's key ink: ChoSua, the bar and Quick Settings get
-        # `auto`; the other surfaces and the settings window keep picking
+        # `auto`, the settings window too; the other surfaces keep picking
         ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features":
                       ["glass", "glass-shaped", "glass-text", "glass-windows", "glass-ink"]},
                       theme=themes.BUILTIN["dark"])
@@ -99,7 +99,7 @@ class GlassTextTest(unittest.TestCase):
         self.assertIn('layer_effects "swayctl-quick" "glass_text auto"', cmds)
         self.assertFalse(any(c == 'layer_effects "swayctl-osd" "glass_text auto"' for c in cmds))
         self.assertTrue(any(c.startswith('[app_id="io.github.huyhappy.SwayctlCenter.Settings"]')
-                            and "glass text none" in c for c in cmds))
+                            and "glass text auto" in c for c in cmds))
 
     def test_chosua_light_text(self):
         # ChoSua draws light text and leaves its readability to the glass;
