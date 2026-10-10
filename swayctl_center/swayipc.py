@@ -23,6 +23,7 @@ EVENT_BIT = 0x80000000
 EVENT_NAMES = {
     EVENT_BIT | 0: "workspace",
     EVENT_BIT | 1: "output",
+    EVENT_BIT | 3: "window",
     EVENT_BIT | 6: "shutdown",
     EVENT_BIT | 21: "input",
 }

@@ -301,12 +301,56 @@ class Daemon:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.touch()
 
+    # what a config file can hold and a restart would want again: looks, input,
+    # outputs, keys. Everything else (focus, workspace, exec, [criteria]...) acts on
+    # the running session.
+    STARTUP_VERBS = ("output", "font", "input", "seat", "floating_modifier", "default_border",
+                     "default_floating_border", "focus_follows_mouse", "focus_on_window_activation",
+                     "gaps", "smart_gaps", "smart_borders", "hide_edge_borders", "mouse_warping",
+                     "workspace_auto_back_and_forth", "titlebar_border_thickness", "titlebar_padding",
+                     "bindsym", "bindcode")
+
+    def write_startup(self, values: dict[str, dict[str, Any]]) -> None:
+        """Save the settings sway itself can take (swayctl-fx reads it with its
+        config), so a login starts with them instead of changing after the daemon is up."""
+        lines: list[str] = []
+        for section, module in self.modules.items():
+            try:
+                cmds = module.commands(section, values[section], None, self._ctx(live=None, values=values))
+            except Exception as e:  # noqa: BLE001 - a module needing the live session just sits out
+                log.debug("startup: %s skipped: %s", section, e)
+                continue
+            for c in cmds:
+                verb = c.split(None, 1)[0] if c.strip() else ""
+                head = c.split(" exec ", 1)[0]  # a variable only sway's own config defines: unknown here
+                if "$" in head:
+                    continue
+                if " all set " in c or " current " in c:
+                    continue  # per-workspace overrides: the session's workspaces, not the config
+                if verb in self.STARTUP_VERBS or verb.startswith("client."):
+                    lines.append(c)
+        if values.get("bar", {}).get("managed"):
+            # the stock config's own bar (swaybar) must not show before the daemon hides it
+            try:
+                lines += [f"bar {bar_id} mode invisible" for bar_id in self.ipc.get_bar_config() or []]
+            except (swayipc.IPCError, OSError) as e:
+                log.debug("startup: bars: %s", e)
+        text = "# written by swayctl-center: settings for sway at startup\n" + "\n".join(lines) + "\n"
+        path = self.store.dir / "generated" / "startup.conf"
+        try:
+            if not path.exists() or path.read_text() != text:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text)
+        except OSError as e:
+            log.warning("startup.conf: %s", e)
+
     def apply_all(self) -> None:
         values = self.store.effective()
         self._resolve_theme(values)
         for section, section_values in values.items():
             self.apply_section(section, section_values, None, all_values=values)
         self.applied = values
+        self.write_startup(values)
 
     def _apply_changes(self) -> dict[str, set[str]]:
         """Apply whatever differs from what was last applied, plus the sections
@@ -326,6 +370,7 @@ class Daemon:
             elif triggers & set(getattr(self.modules[section], "depends_on", ())):
                 self.apply_section(section, values[section], None, all_values=values)
         self.applied = values
+        self.write_startup(values)
         for section, keys in changes.items():
             self._emit_changed(section, keys)
         if "theme" in triggers and "appearance" not in changes:
@@ -455,7 +500,7 @@ class Daemon:
         return GLib.SOURCE_REMOVE
 
     def _watch_sway(self) -> None:
-        self._events = swayipc.EventSubscription(["workspace", "output", "shutdown"])
+        self._events = swayipc.EventSubscription(["workspace", "window", "output", "shutdown"])
         GLib.io_add_watch(self._events.fileno(), GLib.PRIORITY_DEFAULT,
                           GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, self._on_sway_event)
 
@@ -480,6 +525,12 @@ class Daemon:
             # `swaymsg reload` re-applied the user's config on top of ours.
             log.info("sway reloaded its config, re-applying settings")
             self.apply_all()
+        elif name == "window":
+            # a glass app's window opened: hand it its rule directly
+            effects = self.modules.get("effects")
+            cmds = effects.window_opened(payload) if hasattr(effects, "window_opened") else []
+            for e in self._run(cmds, effects.tolerated_errors if cmds else ()):
+                log.warning("%s", e)
         elif name == "output":
             # monitors come and go in bursts; wait for things to settle
             if self._outputs_id:
@@ -511,8 +562,18 @@ class Daemon:
 
     def _on_bus_acquired(self, conn: Gio.DBusConnection, node: Gio.DBusNodeInfo) -> None:
         self.conn = conn
+        self._start_bluetooth_agent(conn)
         conn.register_object(OBJECT_PATH, node.interfaces[0], self._on_method_call, None, None)
         log.info("listening on D-Bus as %s", BUS_NAME)
+
+    def _start_bluetooth_agent(self, conn: Gio.DBusConnection) -> None:
+        """Answers pairing requests with a notification, settings window open or not."""
+        try:
+            from .system.bluetooth_notify import NotifyUI
+            self._bt_notify = NotifyUI(conn)
+            self._bt_notify.start()
+        except Exception as e:  # noqa: BLE001
+            log.warning("bluetooth pairing agent not started: %s", e)
 
     def _emit_changed(self, section: str, keys: set[str]) -> None:
         if self.conn is not None:

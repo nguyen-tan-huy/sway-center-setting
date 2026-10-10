@@ -63,7 +63,7 @@ def _bus() -> Gio.DBusConnection:
     return _bus_singleton
 
 
-def _call(bus, path, interface, method, args=None, reply_type=None):
+def _call(bus, path, interface, method, args=None, reply_type=None, timeout=2000):
     try:
         return bus.call_sync(
             BLUEZ,
@@ -73,7 +73,7 @@ def _call(bus, path, interface, method, args=None, reply_type=None):
             args,
             reply_type,
             Gio.DBusCallFlags.NONE,
-            2000,
+            timeout,
             None,
         )
     except GLib.Error as e:
@@ -162,11 +162,18 @@ def stop_discovery(adapter_path: str) -> None:
 
 
 def pair(device_path: str) -> None:
-    _call(_bus(), device_path, "org.bluez.Device1", "Pair")
+    # waits for the user to answer the agent's confirmation, so no 2 s limit
+    _call(_bus(), device_path, "org.bluez.Device1", "Pair", timeout=120000)
 
 
 def connect(device_path: str) -> None:
-    _call(_bus(), device_path, "org.bluez.Device1", "Connect")
+    _call(_bus(), device_path, "org.bluez.Device1", "Connect", timeout=30000)
+
+
+def pair_and_connect(device_path: str) -> None:
+    pair(device_path)
+    set_trusted(device_path, True)
+    connect(device_path)
 
 
 def disconnect(device_path: str) -> None:

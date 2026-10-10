@@ -21,6 +21,15 @@ use std::rc::Rc;
 
 const APP_ID: &str = "io.github.huyhappy.SwayctlBar";
 const DEFAULT_CSS: &str = include_str!("default.css");
+/// Over the generated theme: the sliding workspace drop is just a fill, no
+/// padding or minimum size of a button.
+const MOTION_CSS: &str = "
+window.bar .workspace.ws-blob { min-width: 0; min-height: 0; padding: 0; margin: 0; }
+/* the number under the drop: accent text whatever the generated theme says (it
+   used to key on `.focused`, and key-coloured text over the opaque drop isn't inked) */
+window.bar .workspace.under-drop, window.bar .workspace.under-drop label { color: @accent_fg_color; text-shadow: none; }
+.workspaces:not(.on-dark):not(.on-light) .workspace { transition: color 90ms linear; }
+";
 
 struct State {
     dir: PathBuf,
@@ -30,6 +39,9 @@ struct State {
     launcher: Rc<ui::launcher::Launcher>,
     popups: Option<Rc<ui::notify::Popups>>,
     bars: RefCell<Vec<gtk::ApplicationWindow>>,
+    /// the bars' service subscriptions, ended on each rebuild (they hold the
+    /// old bars' widgets)
+    bar_subs: watch::Subs,
     css: gtk::CssProvider,
     _monitors: RefCell<Vec<gio::FileMonitor>>,
 }
@@ -39,6 +51,7 @@ impl State {
         for w in self.bars.take() {
             w.close();
         }
+        self.bar_subs.clear();
         let cfg = config::load(&self.dir);
         ui::backdrop::set_current(&cfg.backdrop);
         self.quick.set_config(&cfg);
@@ -49,7 +62,7 @@ impl State {
         let mut bars = Vec::new();
         for i in 0..monitors.n_items() {
             if let Some(m) = monitors.item(i).and_downcast::<gdk::Monitor>() {
-                let w = ui::bar::build(app, &m, &cfg, &self.svc, &self.quick);
+                let w = ui::bar::build(app, &m, &cfg, &self.svc, &self.quick, &self.bar_subs);
                 w.present();
                 bars.push(w);
             }
@@ -101,6 +114,9 @@ fn main() -> glib::ExitCode {
             let base = gtk::CssProvider::new();
             base.load_from_string(DEFAULT_CSS);
             gtk::style_context_add_provider_for_display(&display, &base, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+            let motion = gtk::CssProvider::new();
+            motion.load_from_string(MOTION_CSS);
+            gtk::style_context_add_provider_for_display(&display, &motion, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 2);
             let css = gtk::CssProvider::new();
             // generated theme above our defaults, below the user's own gtk.css
             gtk::style_context_add_provider_for_display(&display, &css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
@@ -118,7 +134,7 @@ fn main() -> glib::ExitCode {
                 launcher: ui::launcher::Launcher::new(app, &cfg.launcher),
                 dir,
                 svc,
-                bars: RefCell::new(Vec::new()),
+                bars: RefCell::new(Vec::new()), bar_subs: Default::default(),
                 css,
                 _monitors: RefCell::new(Vec::new()),
             });

@@ -138,7 +138,7 @@ def _lens_ink_css(accent_fg: str, extra_text: str = "") -> str:
 .on-dark, .on-light, .on-dark label, .on-light label, .on-dark image, .on-light image, .on-dark button, .on-light button {{
   transition: color {INK_EASE}, text-shadow {INK_EASE}, -gtk-icon-shadow {INK_EASE}, background {INK_EASE};
 }}
-.workspace.focused label, .workspace.focused, .tile.active label, .tile.active image, :selected label, :selected image {{
+.workspace.focused label, .workspace.focused, .workspace.under-drop label, .workspace.under-drop, .tile.active label, .tile.active image, :selected label, :selected image {{
   color: {accent_fg}; text-shadow: 0 1px 2px alpha(black, 0.25); -gtk-icon-shadow: none;
 }}
 """)
@@ -166,6 +166,7 @@ window.ink-key .tile:not(.active), window.ink-key .slider-row {{
 }}
 window.ink-key .workspace label {{ color: alpha({k}, 0.78); }}
 window.ink-key .workspace.focused label, window.ink-key .workspace.focused,
+window.ink-key .workspace.under-drop label, window.ink-key .workspace.under-drop,
 window.ink-key .tile.active label, window.ink-key .tile.active image,
 window.ink-key :selected label, window.ink-key :selected image {{ color: {accent_fg}; }}
 """
@@ -772,6 +773,7 @@ window.bar {{ background: {bar_bg}; color: {text}; border-radius: {radius}px; {b
 .workspace, .clock, .status, .mode {{ border-radius: {k['radius_sm'] if modern else 0}px; }}
 .workspace {{ color: {ws_color}; }}
 .workspace.focused {{ background: {k['accent']}; color: {k['accent_fg']}; }}
+.workspace.under-drop {{ color: {k['accent_fg']}; }}
 .workspace.urgent {{ background: {k['error']}; color: #ffffff; }}
 .battery-percent.warning {{ color: {k['warning']}; }}
 .battery-percent.critical {{ color: {k['error']}; }}
@@ -918,7 +920,8 @@ scale slider {{ background: white; box-shadow: 0 0 0 1px alpha(black, 0.12), 0 1
   border: 1px solid alpha(white, 0.35);
   box-shadow: inset 0 1px 0 alpha(white, 0.30);
 }}
-.workspace.focused label {{ color: {k['accent_fg']}; }}
+.workspace.focused label, .workspace.under-drop label {{ color: {k['accent_fg']}; }}
+.workspace.under-drop {{ color: {k['accent_fg']}; }}
 /* sub-pages (Wi-Fi, Sound Output, Power Mode, Power): header, rows, buttons
    are clear lens capsules like the demo */
 .quick-panel headerbar {{

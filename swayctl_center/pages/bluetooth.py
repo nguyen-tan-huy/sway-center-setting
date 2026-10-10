@@ -27,10 +27,10 @@ class DeviceRow(Gtk.Box):
             btn.connect("clicked", lambda *_: page.run_action(bluetooth.disconnect, device.path))
         elif device.paired:
             btn = Gtk.Button(label="Connect")
-            btn.connect("clicked", lambda *_: page.run_action(bluetooth.connect, device.path))
+            btn.connect("clicked", lambda *_: page.run_slow(bluetooth.connect, device.path, what=f"Connecting {device.name}…"))
         else:
             btn = Gtk.Button(label="Pair")
-            btn.connect("clicked", lambda *_: page.run_action(bluetooth.pair, device.path))
+            btn.connect("clicked", lambda *_: page.run_slow(bluetooth.pair_and_connect, device.path, what=f"Pairing {device.name}…"))
         self.append(btn)
 
         if device.paired:
@@ -131,6 +131,18 @@ class BluetoothPage(Gtk.Box):
             self.run_action(bluetooth.stop_discovery, self._adapter.path)
         else:
             self.run_action(bluetooth.start_discovery, self._adapter.path)
+
+    def run_slow(self, fn, *args, what=""):
+        """Pair/connect can wait on the user or the device: keep the UI alive."""
+        self.status_label.set_label(what)
+
+        def done(result):
+            if isinstance(result, Exception):
+                self.status_label.set_label(f"Error: {result}")
+            self.reload()
+            return GLib.SOURCE_REMOVE
+
+        run_async(lambda: fn(*args), done)
 
     def run_action(self, fn, *args):
         try:

@@ -114,6 +114,46 @@ SLIDERS = {
     "effects.glass_thickness": ("Thin", "Thick"),
 }
 
+# number settings picked from a few named steps instead of dragged (a value that
+# is none of them - typed in the file, an old preset - shows nothing selected)
+LEVELS: dict[str, list[tuple[str, float]]] = {
+    "effects.glass_refraction": [("Off", 0), ("Subtle", 25), ("Medium", 50), ("Strong", 90), ("Max", 140)],
+    "effects.glass_opacity": [("Clear", 0), ("Light", 10), ("Medium", 30), ("Strong", 55), ("Opaque", 80)],
+    "effects.glass_blur": [("Clear", 0), ("Light", 25), ("Medium", 50), ("Frosted", 80), ("Max", 100)],
+    "effects.glass_highlight": [("Matte", 0.0), ("Soft", 0.45), ("Shiny", 0.9)],
+    "effects.glass_edge": [("Thin", 40), ("Normal", 100), ("Thick", 180), ("Max", 300)],
+    "effects.glass_chroma": [("None", 0.0), ("Subtle", 0.15), ("Normal", 0.35), ("Rainbow", 0.7)],
+    "effects.glass_thickness": [("Clear", 0), ("Thin", 30), ("Normal", 90), ("Thick", 300), ("Max", 800)],
+    "effects.corner_radius": [("Square", 0), ("Small", 6), ("Medium", 12), ("Large", 20), ("Round", 30)],
+    "effects.dim_inactive": [("Off", 0.0), ("Subtle", 0.06), ("Medium", 0.15), ("Strong", 0.3)],
+    "effects.anim_duration": [("Fast", 120), ("Normal", 200), ("Relaxed", 320), ("Slow", 500)],
+    "layout.border": [("None", 0), ("Thin", 1), ("Normal", 2), ("Thick", 4), ("Heavy", 6)],
+    "layout.floating_border": [("None", 0), ("Thin", 1), ("Normal", 2), ("Thick", 4), ("Heavy", 6)],
+    "layout.gaps_inner": [("None", 0), ("Small", 6), ("Medium", 12), ("Large", 20), ("Huge", 32)],
+    "layout.gaps_outer": [("None", 0), ("Small", 6), ("Medium", 12), ("Large", 20), ("Huge", 32)],
+    "scrolling.touchpad_speed": [("Slow", 0.6), ("Normal", 1.2), ("Fast", 2.0), ("Very fast", 3.0)],
+    "scrolling.mouse_speed": [("Slow", 0.25), ("Normal", 0.45), ("Fast", 0.9), ("Very fast", 1.6)],
+    "scrolling.touchpad_glide": [("Short", 0.95), ("Normal", 0.98), ("Long", 0.99), ("Very long", 0.995)],
+    "scrolling.mouse_glide": [("Short", 0.95), ("Normal", 0.98), ("Long", 0.99), ("Very long", 0.995)],
+    "input.touchpad.pointer_accel": [("Slow", -0.5), ("Normal", 0.0), ("Fast", 0.4), ("Very fast", 0.8)],
+    "input.pointer.pointer_accel": [("Slow", -0.5), ("Normal", 0.0), ("Fast", 0.4), ("Very fast", 0.8)],
+    "input.touchpad.scroll_factor": [("Slow", 0.5), ("Normal", 1.0), ("Fast", 2.0), ("Very fast", 3.0)],
+    "input.pointer.scroll_factor": [("Slow", 0.5), ("Normal", 1.0), ("Fast", 2.0), ("Very fast", 3.0)],
+    "input.keyboard.repeat_delay": [("Short", 300), ("Normal", 600), ("Long", 900)],
+    "input.keyboard.repeat_rate": [("Slow", 15), ("Normal", 25), ("Fast", 40), ("Very fast", 60)],
+    "night_light.temperature": [("Very warm", 2500), ("Warm", 3200), ("Medium", 4000), ("Mild", 5000)],
+    "font.size": [("Small", 9), ("Normal", 10), ("Medium", 12), ("Large", 14), ("Huge", 18)],
+    "font.monospace_size": [("Small", 9), ("Normal", 10), ("Medium", 12), ("Large", 14), ("Huge", 18)],
+    "bar.height": [("Fit", 0), ("Compact", 24), ("Normal", 30), ("Tall", 40)],
+    "bar.padding": [("None", 0), ("Small", 4), ("Normal", 10), ("Large", 16)],
+    "notifications.max_visible": [("1", 1), ("2", 2), ("4", 4), ("6", 6)],
+    "notifications.width": [("Narrow", 320), ("Normal", 400), ("Wide", 500), ("Wider", 650)],
+    "notifications.timeout": [("3 s", 3), ("5 s", 5), ("8 s", 8), ("15 s", 15), ("30 s", 30)],
+    "notifications.timeout_low": [("2 s", 2), ("4 s", 4), ("8 s", 8), ("15 s", 15)],
+    "notifications.timeout_critical": [("Never", 0), ("15 s", 15), ("30 s", 30), ("60 s", 60)],
+    "clipboard.max_items": [("100", 100), ("250", 250), ("750", 750), ("2000", 2000), ("5000", 5000)],
+}
+
 
 def slider_out(key_type: str, raw: float) -> int | float:
     """What a slider sends to the daemon: Gtk.Scale is always float, so int
@@ -556,6 +596,50 @@ class SliderRow(Gtk.ListBoxRow):
         _show_reset(self.reset_btn, abs(value - self.key["default"]) < 1e-6)
 
 
+class LevelRow(Gtk.ListBoxRow):
+    """A number picked from a few named steps (a row of linked buttons)."""
+
+    def __init__(self, page: Page, key: dict[str, Any], levels: list[tuple[str, float]]):
+        super().__init__(activatable=False)
+        self.page, self.key, self.levels = page, key, levels
+        self.path = f"{key['section']}.{key['name']}"
+        self.current: float | None = None
+        self.buttons: list[Gtk.ToggleButton] = []
+        box = Gtk.Box()
+        box.add_css_class("linked")
+        for i, (label, value) in enumerate(levels):
+            b = Gtk.ToggleButton(label=_(label))
+            if self.buttons:
+                b.set_group(self.buttons[0])
+            b.connect("toggled", self._toggled, value)
+            self.buttons.append(b)
+            box.append(b)
+        # never shown: lets "none of the steps" be a state of the radio group
+        self.none = Gtk.ToggleButton(group=self.buttons[0])
+        self.reset_btn = _reset_button(page, self.path)
+        outer = Gtk.Box(spacing=8)
+        outer.append(box)
+        outer.append(self.reset_btn)
+        self.set_child(_row(key["label"], outer, key.get("help")))
+
+    def _toggled(self, button: Gtk.ToggleButton, value: float) -> None:
+        if self.page.updating or not button.get_active():
+            return
+        if self.current is None or abs(value - self.current) > 1e-6:
+            self.page.win.set(self.path, slider_out(self.key["type"], value))
+
+    def set_value(self, value: float) -> None:
+        self.current = value
+        match = next((i for i, (_l, v) in enumerate(self.levels) if abs(v - value) < 1e-6), None)
+        if match is None:
+            # none of the steps: nothing selected, the real value in the tooltip
+            self.none.set_active(True)
+            self.buttons[0].set_tooltip_text(f"{value:g}")
+        else:
+            self.buttons[match].set_active(True)
+        _show_reset(self.reset_btn, abs(value - self.key["default"]) < 1e-6)
+
+
 class FontRow(Gtk.ListBoxRow):
     """A font family, picked from the installed fonts."""
 
@@ -797,6 +881,8 @@ class SchemaPage(Page):
             return ModulesRow(self, key) if key.get("choices_hint") else TextListRow(self, key)
         if path in FONT_KEYS:
             return FontRow(self, key)
+        if path in LEVELS:
+            return LevelRow(self, key, LEVELS[path])
         if path in SLIDERS:
             return SliderRow(self, key, *SLIDERS[path])
         if path in DURATION_KEYS:

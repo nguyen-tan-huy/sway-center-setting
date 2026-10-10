@@ -68,6 +68,23 @@ class WindowGlassTest(unittest.TestCase):
         self.assertIn('for_window [app_id="io.github.huyhappy.SwayctlCenter.Settings"] "glass disable"', off)
         self.assertIn("No matching node.", m.tolerated_errors)  # settings window not open
 
+    def test_a_new_glass_window_is_handed_its_rule(self):
+        m = EffectsModule()
+        app = "io.github.huyhappy.SwayctlCenter.Settings"
+        opened = {"change": "new", "container": {"id": 42, "app_id": app}}
+        self.assertEqual(m.window_opened(opened), [])  # nothing applied yet
+        ctx = Context(Path("/app"), live=self.FX, theme=themes.BUILTIN["dark"])
+        m.commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
+        [cmd] = m.window_opened(opened)
+        self.assertTrue(cmd.startswith("[con_id=42] glass enable, "))
+        # every command of the rule, so a window that opened plain gets all of it
+        self.assertIn("border none, shadows disable", cmd)
+        self.assertEqual(m.window_opened({"change": "title", "container": {"id": 42, "app_id": app}}), [])
+        self.assertEqual(m.window_opened({"change": "new", "container": {"id": 7, "app_id": "firefox"}}), [])
+        # glass off: the rule says so
+        m.commands("effects", schema.defaults()["effects"] | {"glass": False}, None, ctx)
+        self.assertEqual(m.window_opened(opened), ["[con_id=42] glass disable"])
+
     def test_needs_the_feature(self):
         ctx = Context(Path("/app"), live=FX | {"swayctl_features": ["glass"]}, theme=themes.BUILTIN["dark"])
         cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)

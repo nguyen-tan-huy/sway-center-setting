@@ -36,6 +36,9 @@ pub struct QuickSettings {
     opened: Cell<u32>,
     /// run as it opens (notification pop-ups make way)
     pub on_open: RefCell<Option<Box<dyn Fn()>>>,
+    /// the open panel's service subscriptions, ended as it closes (they
+    /// hold its widgets: a panel per open would otherwise never be freed)
+    subs: crate::watch::Subs,
 }
 
 impl QuickSettings {
@@ -44,7 +47,7 @@ impl QuickSettings {
                        catcher: RefCell::new(None), closing: Cell::new(false),
                        on_open: RefCell::new(None), notif: RefCell::new(None), notif_max: Cell::new(320),
                        main_col: RefCell::new(None), backdrop: RefCell::new(None),
-                       opened: Cell::new(0) })
+                       opened: Cell::new(0), subs: Default::default() })
     }
 
     pub fn set_config(&self, cfg: &Config) {
@@ -64,6 +67,8 @@ impl QuickSettings {
         if self.closing.replace(true) {
             return;
         }
+        // the panel stops following the services now; freed once closed
+        self.subs.clear();
         if let Some(c) = self.catcher.take() {
             c.close();
         }
@@ -222,7 +227,7 @@ impl QuickSettings {
             };
             let t = Tile::new("network-wireless-symbolic", "Wi-Fi", Some(Box::new(wifi_page)));
             let (t2, s2) = (t.clone(), sys.clone());
-            svc.network.subscribe(move |net| {
+            self.subs.follow(&svc.network, move |net| {
                 t2.root.set_visible(net.available);
                 t2.set(net.wifi_enabled, if !net.wifi_enabled { "Off" } else if net.kind == "wifi" { &net.name } else { "Not connected" });
                 t2.icon.set_icon_name(Some(if net.kind == "wifi" { icons::network(net) } else if net.wifi_enabled {
@@ -237,7 +242,7 @@ impl QuickSettings {
                 if let Some(me) = me.upgrade() { me.settings("system:bluetooth") }
             })));
             let t2 = t.clone();
-            svc.bluetooth.subscribe(move |b| {
+            self.subs.follow(&svc.bluetooth, move |b| {
                 t2.root.set_visible(b.available);
                 t2.set(b.powered, if b.powered { "On" } else { "Off" });
                 t2.icon.set_icon_name(Some(if b.powered { "bluetooth-active-symbolic" } else { "bluetooth-disabled-symbolic" }));
@@ -249,7 +254,7 @@ impl QuickSettings {
         if let Some(ses) = svc.session.clone() {
             let t = Tile::new("night-light-symbolic", "Night Light", None);
             let t2 = t.clone();
-            svc.night_light.subscribe(move |on| {
+            self.subs.follow(&svc.night_light, move |on| {
                 t2.root.set_visible(on.is_some());
                 t2.set(on.unwrap_or(false), if on.unwrap_or(false) { "On" } else { "Off" });
             });
@@ -259,7 +264,7 @@ impl QuickSettings {
         if let Some(n) = svc.notifier.clone().filter(|n| n.active.get()) {
             let t = Tile::new("notifications-disabled-symbolic", "Do Not Disturb", None);
             let t2 = t.clone();
-            n.dnd.subscribe(move |on| t2.set(*on, if *on { "On" } else { "Off" }));
+            self.subs.follow(&n.dnd, move |on| t2.set(*on, if *on { "On" } else { "Off" }));
             t.button.connect_clicked(move |_| n.dnd.set(!n.dnd.get()));
             add(t.root.upcast_ref());
         } else if let Some(dnd) = procs::dnd() {
@@ -281,7 +286,7 @@ impl QuickSettings {
                 if let Some(me) = me.upgrade() { nav2.push(&me.profile_page()) }
             })));
             let t2 = t.clone();
-            svc.profile.subscribe(move |p| {
+            self.subs.follow(&svc.profile, move |p| {
                 t2.set(p != "balanced", &profile_label(p));
                 t2.icon.set_icon_name(Some(&format!("power-profile-{p}-symbolic")));
             });
@@ -318,7 +323,7 @@ impl QuickSettings {
             row.append(&out);
             let updating = Rc::new(Cell::new(false));
             let (s2, u2) = (scale.clone(), updating.clone());
-            svc.volume.subscribe(move |v| {
+            self.subs.follow(&svc.volume, move |v| {
                 icon.set_icon_name(Some(icons::volume(v)));
                 if (s2.value() as u32) != v.percent.min(100) {
                     u2.set(true);
@@ -353,7 +358,7 @@ impl QuickSettings {
             let play = mk("media-playback-start-symbolic", "PlayPause");
             mk("media-skip-forward-symbolic", "Next");
             let card2 = card.clone();
-            svc.media.subscribe(move |m| {
+            self.subs.follow(&svc.media, move |m| {
                 card2.set_visible(!m.player.is_empty());
                 title.set_label(if m.title.is_empty() { "Playing" } else { &m.title });
                 artist.set_label(&m.artist);
@@ -411,7 +416,7 @@ impl QuickSettings {
         section.append(&scroller);
         self.notif.replace(Some((scroller, list.clone())));
         let (n2, sec2, me) = (n.clone(), section.clone(), Rc::downgrade(self));
-        n.changed.subscribe(move |_| {
+        self.subs.follow(&n.changed, move |_| {
             while let Some(c) = list.first_child() {
                 list.remove(&c);
             }

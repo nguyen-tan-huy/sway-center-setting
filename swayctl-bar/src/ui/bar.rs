@@ -3,16 +3,18 @@
 use crate::config::Config;
 use crate::services::{procs, sway, tray, Services};
 use crate::ui::{icons, quick::QuickSettings};
+use crate::watch::Subs;
 use gtk::prelude::*;
 use gtk::{gdk, glib};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use std::cell::Cell;
+use adw::prelude::*;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 pub const NAMESPACE: &str = "swayctl-bar";
 
 pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: &Rc<Services>,
-             quick: &Rc<QuickSettings>) -> gtk::ApplicationWindow {
+             quick: &Rc<QuickSettings>, subs: &Subs) -> gtk::ApplicationWindow {
     let win = gtk::ApplicationWindow::builder().application(app).css_classes(["bar"]).build();
     win.init_layer_shell();
     win.set_namespace(Some(NAMESPACE));
@@ -54,7 +56,7 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
     let side = |names: &[String], class: &str| {
         let b = gtk::Box::builder().orientation(orientation).spacing(cfg.spacing).css_classes([class]).build();
         for name in names {
-            if let Some(w) = module(name, cfg, svc, quick, &output, monitor) {
+            if let Some(w) = module(name, cfg, svc, quick, &output, monitor, subs) {
                 w.add_css_class("module");
                 b.append(&w);
             }
@@ -118,7 +120,7 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
             glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || r(true));
         });
         let r = retag.clone();
-        svc.sway.state.subscribe(move |_| {
+        subs.follow(&svc.sway.state, move |_| {
             let r = r.clone();
             // after the workspace buttons have been laid out again
             glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || r(true));
@@ -128,7 +130,11 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
         // only, and not often: each read stalls the compositor's frame (it
         // was once a second — a visible cursor hitch every second at 120 Hz)
         let r = retag.clone();
+        let alive = win.downgrade();
         glib::timeout_add_seconds_local(10, move || {
+            if alive.upgrade().is_none() {
+                return glib::ControlFlow::Break; // this bar was rebuilt
+            }
             r(false);
             glib::ControlFlow::Continue
         });
@@ -137,13 +143,13 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
 }
 
 fn module(name: &str, cfg: &Config, svc: &Rc<Services>, quick: &Rc<QuickSettings>, output: &str,
-          monitor: &gdk::Monitor) -> Option<gtk::Widget> {
+          monitor: &gdk::Monitor, subs: &Subs) -> Option<gtk::Widget> {
     Some(match name {
-        "workspaces" => workspaces(svc, output).upcast(),
+        "workspaces" => workspaces(svc, output, subs).upcast(),
         "mode" => {
             let l = gtk::Label::builder().css_classes(["mode"]).visible(false).build();
             let l2 = l.clone();
-            svc.sway.state.subscribe(move |s| {
+            subs.follow(&svc.sway.state, move |s| {
                 l2.set_label(&s.mode);
                 l2.set_visible(!s.mode.is_empty());
             });
@@ -153,12 +159,12 @@ fn module(name: &str, cfg: &Config, svc: &Rc<Services>, quick: &Rc<QuickSettings
             let l = gtk::Label::builder().css_classes(["window-title"]).ellipsize(gtk::pango::EllipsizeMode::End)
                 .max_width_chars(60).build();
             let l2 = l.clone();
-            svc.sway.state.subscribe(move |s| l2.set_label(&s.title));
+            subs.follow(&svc.sway.state, move |s| l2.set_label(&s.title));
             l.upcast()
         }
         "clock" => clock(cfg).upcast(),
-        "status" => status(svc, quick, monitor).upcast(),
-        "tray" => tray(svc)?.upcast(),
+        "status" => status(svc, quick, monitor, subs).upcast(),
+        "tray" => tray(svc, subs)?.upcast(),
         _ => {
             eprintln!("swayctl-bar: unknown module {name}");
             return None;
@@ -166,38 +172,235 @@ fn module(name: &str, cfg: &Config, svc: &Rc<Services>, quick: &Rc<QuickSettings
     })
 }
 
-fn workspaces(svc: &Rc<Services>, output: &str) -> gtk::Box {
-    let b = gtk::Box::builder().css_classes(["workspaces"]).spacing(2).build();
-    let (b2, output) = (b.clone(), output.to_owned());
-    svc.sway.state.subscribe(move |s| {
-        while let Some(c) = b2.first_child() {
-            b2.remove(&c);
-        }
-        for ws in s.workspaces.iter().filter(|w| output.is_empty() || w.output == output) {
-            let btn = gtk::Button::builder().label(&ws.name).css_classes(["workspace", "flat"]).build();
-            if ws.focused {
-                btn.add_css_class("focused");
-            } else if ws.visible {
-                btn.add_css_class("visible");
+/// The focused workspace's "drop": one blob behind the buttons that slides to
+/// the new workspace. Its leading edge springs ahead of the trailing one, so
+/// it stretches on the way (and flattens a little) and then settles back, like
+/// a drop of water. The buttons only carry the text (the one it's over wears
+/// the accent text, `.under-drop`); the blob is the `.focused` fill.
+struct WsDrop {
+    fixed: gtk::Fixed,
+    blob: gtk::Box,
+    row: gtk::Box,
+    left: Cell<f64>,
+    right: Cell<f64>,
+    /// where the blob is heading
+    goal: Cell<(f64, f64)>,
+    /// (width, y, height) of the focused button: the blob at rest
+    rest: Cell<(f64, f64, f64)>,
+    placed: Cell<bool>,
+    /// each button's span along the fixed, as of the last layout
+    spans: RefCell<Vec<(gtk::Widget, f64, f64)>>,
+    /// the springs of the left and the right edge
+    anims: RefCell<Vec<adw::SpringAnimation>>,
+}
+
+impl WsDrop {
+    fn focused_button(&self) -> Option<gtk::Widget> {
+        let mut c = self.row.first_child();
+        while let Some(w) = c {
+            if w.has_css_class("current") {
+                return Some(w);
             }
-            if ws.urgent {
-                btn.add_css_class("urgent");
-            }
-            let target = if ws.num >= 0 { format!("workspace number {}", ws.num) } else {
-                format!("workspace \"{}\"", ws.name.replace('"', "\\\""))
-            };
-            btn.connect_clicked(move |_| sway::command(&target));
-            b2.append(&btn);
+            c = w.next_sibling();
         }
+        None
+    }
+
+    fn stop(&self) {
+        for a in self.anims.take() {
+            a.pause();
+        }
+    }
+
+    /// Head for the focused button; snap there instead when `animate` is off
+    /// or the blob isn't on screen yet.
+    fn retarget(self: &Rc<Self>, animate: bool) {
+        let Some(btn) = self.focused_button() else {
+            // the focused workspace is on another output
+            self.stop();
+            self.blob.set_visible(false);
+            self.placed.set(false);
+            self.measure();
+            self.wear(None);
+            return;
+        };
+        let Some(b) = btn.compute_bounds(&self.fixed) else { return };
+        let (x, w, y, h) = (b.x() as f64, b.width() as f64, b.y() as f64, b.height() as f64);
+        if w < 1.0 {
+            return;
+        }
+        self.rest.set((w, y, h));
+        self.measure();
+        let (l, r) = (x, x + w);
+        if !self.placed.get() || !animate || !self.blob.is_mapped() {
+            self.stop();
+            self.goal.set((l, r));
+            self.left.set(l);
+            self.right.set(r);
+            self.placed.set(true);
+            self.blob.set_visible(true);
+            self.paint();
+            return;
+        }
+        if self.goal.get() == (l, r) {
+            return;
+        }
+        self.goal.set((l, r));
+        // the edge on the side it's moving to leads: quick, a touch of
+        // overshoot; the other trails: slow and soft
+        let right_leads = l + r >= self.left.get() + self.right.get();
+        let lead = adw::SpringParams::new(0.7, 1.0, 380.0);
+        let trail = adw::SpringParams::new(0.95, 1.0, 130.0);
+        let (pl, pr) = if right_leads { (trail, lead) } else { (lead, trail) };
+        // a move interrupted midway carries its speed into the next
+        let old = self.anims.take();
+        let (mut vl, mut vr) = (0.0, 0.0);
+        if old.len() == 2 {
+            vl = old[0].velocity();
+            vr = old[1].velocity();
+        }
+        for a in &old {
+            a.pause();
+        }
+        let edge = |from: f64, to: f64, v0: f64, params: adw::SpringParams, right: bool| {
+            let weak = Rc::downgrade(self);
+            let target = adw::CallbackAnimationTarget::new(move |v| {
+                let Some(me) = weak.upgrade() else { return };
+                if right { me.right.set(v) } else { me.left.set(v) }
+                me.paint();
+            });
+            let a = adw::SpringAnimation::new(&self.fixed, from, to, params, target);
+            a.set_initial_velocity(v0);
+            a.set_epsilon(0.05);
+            a.play();
+            a
+        };
+        let al = edge(self.left.get(), l, vl, pl, false);
+        let ar = edge(self.right.get(), r, vr, pr, true);
+        *self.anims.borrow_mut() = vec![al, ar];
+    }
+
+    /// Two frames on, when the buttons have been laid out again.
+    fn retarget_later(self: &Rc<Self>, animate: bool) {
+        let weak = Rc::downgrade(self);
+        let ticks = Cell::new(0u8);
+        self.fixed.add_tick_callback(move |_, _| {
+            ticks.set(ticks.get() + 1);
+            if ticks.get() < 2 {
+                return glib::ControlFlow::Continue;
+            }
+            if let Some(me) = weak.upgrade() {
+                me.retarget(animate);
+            }
+            glib::ControlFlow::Break
+        });
+    }
+
+    fn measure(&self) {
+        let mut spans = Vec::new();
+        let mut c = self.row.first_child();
+        while let Some(w) = c {
+            if let Some(b) = w.compute_bounds(&self.fixed) {
+                spans.push((w.clone(), b.x() as f64, b.x() as f64 + b.width() as f64));
+            }
+            c = w.next_sibling();
+        }
+        *self.spans.borrow_mut() = spans;
+    }
+
+    /// The numbers the drop covers (by their middle) wear the accent text.
+    fn wear(&self, over: Option<(f64, f64)>) {
+        for (w, x0, x1) in self.spans.borrow().iter() {
+            let mid = (x0 + x1) / 2.0;
+            let on = over.is_some_and(|(l, r)| mid >= l && mid <= r);
+            if on != w.has_css_class("under-drop") {
+                if on { w.add_css_class("under-drop") } else { w.remove_css_class("under-drop") }
+            }
+        }
+    }
+
+    fn paint(&self) {
+        let (rest_w, y, h) = self.rest.get();
+        let total = self.fixed.width() as f64;
+        let (mut l, mut r) = (self.left.get(), self.right.get());
+        if total > 0.0 {
+            // never wider than the row: the fixed's own size must not grow
+            l = l.clamp(0.0, total);
+            r = r.clamp(0.0, total);
+        }
+        let w = (r - l).max(4.0);
+        // longer than at rest = flatter, as a stretched drop is
+        let stretch = (w / rest_w.max(1.0) - 1.0).clamp(0.0, 1.5);
+        let hh = h * (1.0 - 0.08 * stretch);
+        self.blob.set_size_request(w.round() as i32, hh.round() as i32);
+        self.fixed.move_(&self.blob, l, y + (h - hh) / 2.0);
+        self.wear(Some((l, r)));
+    }
+}
+
+fn set_ws_state(btn: &gtk::Widget, ws: &sway::Workspace) {
+    for (class, on) in [("current", ws.focused), ("visible", !ws.focused && ws.visible), ("urgent", ws.urgent)] {
+        if on { btn.add_css_class(class) } else { btn.remove_css_class(class) }
+    }
+}
+
+fn workspaces(svc: &Rc<Services>, output: &str, subs: &Subs) -> gtk::Overlay {
+    let row = gtk::Box::builder().css_classes(["workspace-row"]).spacing(2).build();
+    let fixed = gtk::Fixed::builder().can_target(false).build();
+    let blob = gtk::Box::builder().css_classes(["workspace", "focused", "ws-blob"])
+        .can_target(false).visible(false).build();
+    fixed.put(&blob, 0.0, 0.0);
+    // the drop layer is the main child (lowest), the buttons overlay it and
+    // give the overlay its size
+    let root = gtk::Overlay::builder().css_classes(["workspaces"]).child(&fixed).build();
+    root.add_overlay(&row);
+    root.set_measure_overlay(&row, true);
+    let drop = Rc::new(WsDrop {
+        fixed, blob, row: row.clone(), left: Cell::new(0.0), right: Cell::new(0.0), goal: Cell::new((0.0, 0.0)),
+        rest: Cell::new((1.0, 0.0, 0.0)), placed: Cell::new(false), spans: RefCell::new(Vec::new()), anims: RefCell::new(Vec::new()),
     });
+    let output = output.to_owned();
+    let names: RefCell<Vec<String>> = RefCell::new(Vec::new());
+    let d = drop.clone();
+    subs.follow(&svc.sway.state, move |s| {
+        let list: Vec<&sway::Workspace> = s.workspaces.iter().filter(|w| output.is_empty() || w.output == output).collect();
+        let now: Vec<String> = list.iter().map(|w| w.name.clone()).collect();
+        // buttons are only rebuilt when workspaces come or go; a plain focus
+        // change keeps them (and so the blob has something to slide between)
+        let rebuilt = *names.borrow() != now;
+        if rebuilt {
+            while let Some(c) = row.first_child() {
+                row.remove(&c);
+            }
+            for ws in &list {
+                let btn = gtk::Button::builder().label(&ws.name).css_classes(["workspace", "flat"]).build();
+                let target = if ws.num >= 0 { format!("workspace number {}", ws.num) } else {
+                    format!("workspace \"{}\"", ws.name.replace('"', "\\\""))
+                };
+                btn.connect_clicked(move |_| sway::command(&target));
+                row.append(&btn);
+            }
+            *names.borrow_mut() = now;
+        }
+        let mut child = row.first_child();
+        for ws in &list {
+            let Some(btn) = child else { break };
+            set_ws_state(&btn, ws);
+            child = btn.next_sibling();
+        }
+        if rebuilt { d.retarget_later(true) } else { d.retarget(true) }
+    });
+    // placed once the bar is on screen
+    let d = drop.clone();
+    root.connect_map(move |_| d.retarget_later(false));
     // scroll through workspaces like most bars
     let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE);
     scroll.connect_scroll(|_, _dx, dy| {
         sway::command(if dy > 0.0 { "workspace next_on_output" } else { "workspace prev_on_output" });
         glib::Propagation::Stop
     });
-    b.add_controller(scroll);
-    b
+    root.add_controller(scroll);
+    root
 }
 
 fn clock(cfg: &Config) -> gtk::Button {
@@ -206,8 +409,10 @@ fn clock(cfg: &Config) -> gtk::Button {
     let (fmt, alt) = (cfg.clock_format.clone(), cfg.clock_format_alt.clone());
     let seconds = fmt.contains("%S") || fmt.contains("%T") || fmt.contains("%r");
     let tick = {
-        let (label, btn) = (label.clone(), btn.clone());
+        // weak: the timer below stops once the clock is gone
+        let (label, btn) = (label.downgrade(), btn.downgrade());
         move || {
+            let (Some(label), Some(btn)) = (label.upgrade(), btn.upgrade()) else { return };
             if let Ok(now) = glib::DateTime::now_local() {
                 label.set_label(&now.format(&fmt).map(|s| s.to_string()).unwrap_or_default());
                 btn.set_tooltip_text(now.format(&alt).ok().as_deref());
@@ -233,7 +438,7 @@ fn clock(cfg: &Config) -> gtk::Button {
 }
 
 /// The cluster of status icons on the right; one click opens Quick Settings.
-fn status(svc: &Rc<Services>, quick: &Rc<QuickSettings>, monitor: &gdk::Monitor) -> gtk::Button {
+fn status(svc: &Rc<Services>, quick: &Rc<QuickSettings>, monitor: &gdk::Monitor, subs: &Subs) -> gtk::Button {
     // spacing from CSS (border-spacing on .status-row), so bar.padding can set it
     let row = gtk::Box::builder().css_classes(["status-row"]).build();
     let net = gtk::Image::new();
@@ -247,22 +452,22 @@ fn status(svc: &Rc<Services>, quick: &Rc<QuickSettings>, monitor: &gdk::Monitor)
     let btn = gtk::Button::builder().child(&row).css_classes(["status", "flat"]).build();
     {
         let (net, btn) = (net.clone(), btn.clone());
-        svc.network.subscribe(move |n| {
+        subs.follow(&svc.network, move |n| {
             net.set_icon_name(Some(icons::network(n)));
             btn.set_tooltip_text(Some(if n.name.is_empty() { "Offline" } else { &n.name }));
         });
     }
     {
         let bt = bt.clone();
-        svc.bluetooth.subscribe(move |b| bt.set_visible(b.available && b.powered));
+        subs.follow(&svc.bluetooth, move |b| bt.set_visible(b.available && b.powered));
     }
     {
         let vol = vol.clone();
-        svc.volume.subscribe(move |v| vol.set_icon_name(Some(icons::volume(v))));
+        subs.follow(&svc.volume, move |v| vol.set_icon_name(Some(icons::volume(v))));
     }
     {
         let (bat, pct) = (bat.clone(), pct.clone());
-        svc.battery.subscribe(move |b| {
+        subs.follow(&svc.battery, move |b| {
             bat.set_visible(b.present);
             pct.set_visible(b.present);
             bat.set_icon_name(Some(&icons::battery(b)));
@@ -310,11 +515,11 @@ pub fn tray_button_at(win: &gtk::Window, n: usize) -> Option<gtk::Button> {
     c.and_downcast::<gtk::Button>()
 }
 
-fn tray(svc: &Rc<Services>) -> Option<gtk::Box> {
+fn tray(svc: &Rc<Services>, subs: &Subs) -> Option<gtk::Box> {
     let tray = svc.tray.clone()?;
     let b = gtk::Box::builder().css_classes(["tray"]).spacing(2).build();
     let (b2, t2) = (b.clone(), tray.clone());
-    tray.items.subscribe(move |items| {
+    subs.follow(&tray.items, move |items| {
         while let Some(c) = b2.first_child() {
             b2.remove(&c);
         }

@@ -7,6 +7,8 @@ window.bar { background: none; color: #1d1d1f; }
 .module { margin: 4px 0; }
 .workspace { min-width: 26px; min-height: 0; padding: 0 8px; border-radius: 8px; }
 .workspace.focused { background: @accent_bg_color; color: @accent_fg_color; }
+/* the drop (see ui/bar.rs) is the `.focused` one; a number it slides over wears the accent text */
+.workspace.under-drop { color: @accent_fg_color; }
 .workspace.visible { background: alpha(@window_fg_color, 0.1); }
 .workspace.urgent { background: @error_bg_color; color: @error_fg_color; }
 .mode { padding: 0 10px; border-radius: 8px; background: @accent_bg_color; color: @accent_fg_color; }

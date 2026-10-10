@@ -107,6 +107,8 @@ class EffectsModule:
     tolerated_errors = ("No matching node.",)
     depends_on = ("theme",)
     _app_glass: str | None = None  # the for_window rule last added (sway keeps every one)
+    # each glass app's rule as it applies to one window, as of the last apply
+    window_rules: dict[str, str] | None = None
 
     def snapshot(self, ipc: swayipc.Connection) -> dict[str, Any]:
         return ipc.get_version()
@@ -213,7 +215,10 @@ class EffectsModule:
                     what = rule[0].split("] ", 1)[1]
                     lines.append(f'for_window [app_id="{app}"] "{what}"')
         problems = self.portal_theme(v, ctx)
-        text = "# written by swayctl-center: effects for swayctl-fx at startup\n" + "\n".join(lines) + "\n"
+        # the rest of the settings (gaps, colors, outputs...) ride along from startup.conf
+        startup = ctx.data_dir / "generated" / "startup.conf"
+        text = ("# written by swayctl-center: effects for swayctl-fx at startup\n"
+                f"include {startup}\n" + "\n".join(lines) + "\n")
         path = ctx.data_dir / "generated" / "swayctl-fx.conf"
         try:
             if not path.exists() or path.read_text() != text:
@@ -277,6 +282,7 @@ class EffectsModule:
                     + (f", glass text {app_text}" if app_text else "") + ", border none, shadows disable")
 
         cmds = [f'[app_id="{app}"] {what(app)}' for app in GLASS_APPS]
+        self.window_rules = {app: what(app) for app in GLASS_APPS}
         wanted = "\n".join(what(app) for app in GLASS_APPS)
         if wanted != self._app_glass:
             self._app_glass = wanted
@@ -284,6 +290,20 @@ class EffectsModule:
             # of the list outside the for_window
             cmds = [f'for_window [app_id="{app}"] "{what(app)}"' for app in GLASS_APPS] + cmds
         return cmds
+
+    def window_opened(self, payload: dict[str, Any] | None) -> list[str]:
+        """A window just opened: its glass rule sent to it directly. The
+        for_window rules should have done it as it mapped, but a window that
+        opened without them (sway held an older set) stayed plain glass with
+        its key-coloured text un-inked until a `reload` re-ran them; this
+        makes it right at once, whatever sway held."""
+        if (payload or {}).get("change") != "new" or not self.window_rules:
+            return []
+        con = (payload or {}).get("container") or {}
+        rule = self.window_rules.get(con.get("app_id"))
+        if not rule or con.get("id") is None:
+            return []
+        return [f'[con_id={con["id"]}] {rule}']
 
     def import_current(self, ipc: swayipc.Connection, config: swayconfig.Config,
                        ctx: Context) -> dict[str, dict[str, Any]]:

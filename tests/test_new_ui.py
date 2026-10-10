@@ -52,6 +52,19 @@ class RetireOldChoicesTest(unittest.TestCase):
         self.assertIn("help", keys["effects.glass_chroma"])
         self.assertNotIn("help", keys["bar.config_file"])
 
+    def test_every_level_is_a_value_its_key_accepts(self):
+        from swayctl_center.ui import LEVELS, slider_out
+        for path, levels in LEVELS.items():
+            key = schema.lookup(*path.rsplit(".", 1)) if path.count(".") == 1 else None
+            if key is None:  # "input.touchpad" style sections
+                section, name = path.rsplit(".", 1)
+                key = schema.lookup(section, name)
+            self.assertIsNotNone(key, path)
+            self.assertEqual(len({v for _l, v in levels}), len(levels), path)
+            for label, value in levels:
+                self.assertEqual(key.validate(slider_out(key.type, value)), slider_out(key.type, value), f"{path} {label}")
+            self.assertIn(key.default, [v for _l, v in levels], f"{path}: default is one of the steps")
+
     def test_int_sliders_do_not_send_floats(self):
         # Gtk.Scale is float: glass_opacity 48.113 used to fail store validation
         from swayctl_center.ui import SLIDERS, slider_out

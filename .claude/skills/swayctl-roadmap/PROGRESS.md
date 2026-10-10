@@ -277,3 +277,32 @@
 - [x] Nhiều kết quả: danh sách trong ScrolledWindow trong tấm kính, cao = min(tự nhiên, 55% màn hình) — tự đo và đặt
       min/max_content_height (ScrolledWindow không báo natural height, như danh sách thông báo của Quick Settings).
       ↑↓/hover chỉ đổi class `selected` + gợi ý phím (không dựng lại danh sách, giữ vị trí cuộn), tự cuộn tới mục chọn. bar -12.
+- [x] Rò bộ nhớ swayctl-bar (máy thật: ~28 GB heap sau 11 giờ): `Watch` không bao giờ bỏ subscriber, mà Quick
+      Settings dựng panel mới mỗi lần mở và bar dựng lại mỗi lần đổi config/màn hình -> closure giữ sống mọi panel/bar
+      cũ, và mỗi thông báo dựng lại 30 thẻ trong MỌI panel cũ, mỗi sự kiện sway dựng lại nút workspace của MỌI bar cũ.
+      Sửa: `Watch::subscribe` trả id + `unsubscribe`, `watch::Subs` (kết thúc cả nhóm); Quick Settings `subs.clear()` khi
+      đóng, `State.bar_subs` clear khi rebuild; timer 10 s của bar và đồng hồ dừng khi bar cũ mất (đồng hồ giữ weak).
+      Test: `tools/sandbox.sh --fx /home/repo/tools/bar_leak_test.sh [binary]` - bản cũ +70 MB sau 90 lần mở + 40 thông
+      báo, bản mới +0,4 MB. Quy tắc: widget dựng theo lần mở/rebuild phải `Subs::follow`, không `subscribe` thẳng. bar -20.
+- [x] Bar: workspace "giọt nước" (`WsDrop` trong `ui/bar.rs`). Một viên màu (`.workspace.focused.ws-blob`, trong `Fixed` nằm DƯỚI
+      hàng nút bằng `Overlay` + `set_measure_overlay`) trượt tới nút mới: hai mép là hai `adw::SpringAnimation`, mép dẫn
+      (phía đang đi tới) cứng+nảy nhẹ (ζ 0.7, k 380), mép đuôi mềm (ζ 0.95, k 130) nên viên màu giãn ra rồi co lại, dẹt
+      tối đa 8% khi giãn; bị ngắt giữa chừng thì mang vận tốc sang lần sau. Nút chỉ đổi class tại chỗ khi chỉ đổi focus
+      (chỉ dựng lại khi workspace thêm/bớt), class `current` = đang focus (tìm viên đích), `.under-drop` = viên màu đang
+      phủ giữa nút -> chữ accent (components.py: các selector `.workspace.focused` có thêm `.workspace.under-drop`;
+      MOTION_CSS ở main.rs, provider APPLICATION+2). Tắt animation hệ thống thì adw tự nhảy tới đích. Test ảnh:
+      `tools/sandbox.sh --fx /home/repo/tools/ws_drop_shot.sh` (khung 0-900 ms, 2 chiều); rò rỉ: bar_leak_test (200 lần
+      đổi workspace +50 kB). bar -21.
+- [x] Sửa hồi quy của drop: nút workspace đổi class `focused` -> `current`, nên theme sinh ra CŨ (chưa cài center mới) không còn
+      tô chữ accent cho nó -> chữ khoá #FF00FE hiện nguyên trên viên màu đặc (compositor không ink được chữ trên nền đặc).
+      MOTION_CSS (APPLICATION+2) giờ tự đặt `.workspace.under-drop` = accent_fg, không phụ thuộc theme sinh ra; ws_drop_shot
+      chạy với theme "cũ" cố ý (chữ khoá). Luôn cài bar và center cùng lúc. bar -22, center -38.
+- [x] Lỗi "mở app cài đặt lên: chữ khoá #FF00FE lộ ra, `swaymsg reload` mới hết" (10/10). Tái hiện được:
+      `tools/sandbox.sh --fx /home/repo/tools/ink_stale_rules.sh` - sway đang giữ một rule for_window mới hơn (`glass text none`)
+      -> cửa sổ mở ra không được ink (5802 điểm ảnh khoá) tới khi reload chạy lại rule. Lý do rule sai trong phiên thật chưa rõ
+      (sway giữ mọi rule for_window, cái mới nhất thắng), nên sửa ở chỗ chắc chắn: daemon đăng ký sự kiện `window`
+      (swayipc.EVENT_NAMES +window), khi cửa sổ của app kính mở (`change: new`) thì gửi thẳng rule của nó
+      `[con_id=N] glass enable, ... glass text auto ...` (`EffectsModule.window_rules` / `window_opened`). Sau sửa: 0 điểm ảnh khoá.
+      Test: tests/test_effects.py; công cụ chẩn đoán còn lại: tools/ink_repro.sh (8 tình huống, đều 0). center -39.
+- [x] Cấu hình từ khung đầu: daemon ghi generated/startup.conf (gaps, viền, màu client, font, input, output, bindsym... — bỏ lệnh "all set"/[criteria]/exec), swayctl-fx.conf `include` nó; fork đọc sẵn nên không cần build lại swayctl-fx. tools/startup_config_test.sh (không lỗi config, include chạy được).
+- [x] Cài đặt dạng số chọn theo bậc thay vì kéo/nhập: ui.LEVELS + LevelRow (nút liền nhau: Thin/Normal/Thick...) cho kính, góc bo, gaps, viền, cuộn, con trỏ, phím, font, bar, thông báo...; giá trị ngoài bậc hiện không chọn gì (tooltip có số). Test: mọi bậc hợp lệ + mặc định là một bậc.
