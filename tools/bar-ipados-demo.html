@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bar kiểu iPadOS · demo</title>
+<style>
+/* Bar thiết kế lại theo iPadOS. Các mô-đun giữ nguyên chức năng của swayctl-bar:
+   workspace · tên cửa sổ · đồng hồ · tray · trạng thái (Wi-Fi/âm thanh/pin) · Quick Settings. */
+:root{
+  --bg:#0e1116; --panel:#171b22; --line:#2a303a; --fg:#e8eaee; --dim:#8b93a1; --accent:#0a84ff;
+  --font:-apple-system,"SF Pro Text","Inter",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: light){:root{--bg:#f2f3f5;--panel:#fff;--line:#d9dce1;--fg:#1d1d1f;--dim:#6b7280}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--font)}
+.wrap{max-width:1040px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:20px;margin:0 0 4px}.sub{margin:0 0 14px;color:var(--dim)}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--panel);
+  border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--dim)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-left:6px}
+.seg button{font:inherit;color:var(--fg);background:transparent;border:0;border-right:1px solid var(--line);padding:5px 11px;cursor:pointer}
+.seg button:last-child{border-right:0}.seg button.on{background:var(--accent);color:#fff}
+label output{color:var(--fg);margin-left:6px}
+
+/* ---------- màn hình ---------- */
+.screen{position:relative;height:560px;border-radius:16px;overflow:hidden;border:1px solid var(--line);
+  --ink:#fff; --ink-dim:rgba(255,255,255,.62); --halo:rgba(0,0,0,.35);
+  background:#14282a}
+.screen.light{--ink:#111317; --ink-dim:rgba(17,19,23,.55); --halo:rgba(255,255,255,.55)}
+.screen .wall{transition:filter .5s}
+.screen.light .wall{filter:brightness(1.9) saturate(.75)}
+
+/* ---------- kính lỏng (bê từ liquid-demo.html, bộ thông số "approved") ---------- */
+.screen{--rim:none;--in:inset 0 0 20px -5px rgba(255,255,255,.45);--out:0 4px 24px rgba(0,0,0,.18);--fill:rgba(255,255,255,.06)}
+.glass{position:relative;isolation:isolate;border:var(--rim);box-shadow:var(--out)}
+.glass::after{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;
+  backdrop-filter:var(--lg,blur(20px));-webkit-backdrop-filter:var(--lg,blur(20px));isolation:isolate}
+.glass::before{content:"";position:absolute;inset:0;z-index:1;border-radius:inherit;background:var(--fill);
+  box-shadow:var(--in);pointer-events:none}
+.glass>*{position:relative;z-index:2}
+.screen.screen[data-glass="flat"]{--tile:var(--tile-bar,#2a2f38);--rim:none!important;--in:none!important;--out:none!important}
+.screen[data-glass="flat"] .card{color:var(--qs-ink,#fff)}
+.screen[data-glass="flat"] .glass{--lg:none!important;--fill:var(--tile)}
+.screen[data-glass="flat"] .tile.act{--fill:var(--accent);--rim:none!important;--in:none!important}
+.screen[data-glass="flat"] .row .tr{background:var(--qs-track,rgba(255,255,255,.16))}
+.screen[data-glass="off"] .glass{--lg:blur(24px) saturate(1.4)!important;--fill:rgba(255,255,255,.14)}
+.screen.light[data-glass="off"] .glass{--fill:rgba(255,255,255,.5)}
+
+/* ---------- cửa sổ theo sway (swayctl-fx.conf: border 2, gaps 8, corner_radius 12, shadow 20, dim 0.06) ---------- */
+.desk{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.wsv{position:absolute;inset:0}
+.app{position:absolute;pointer-events:auto;border:2px solid rgba(255,255,255,.16);border-radius:12px;overflow:hidden;
+  box-shadow:0 0 20px rgba(0,0,0,.22);background:#1a1d24;color:#e8eaee;font-size:12px;will-change:transform,opacity;cursor:default}
+.app.focus{border-color:var(--accent)}
+.app::after{content:"";position:absolute;inset:0;background:#000;opacity:.06;pointer-events:none;transition:opacity .2s}
+.app.focus::after{opacity:0}
+.app .hd{position:absolute;left:10px;top:7px;font-weight:700;font-size:11.5px;opacity:.75;z-index:2}
+.m{position:absolute;inset:0;padding:30px 12px 12px;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.term{background:#11141a;font:12px/1.5 ui-monospace,monospace}.term i{font-style:normal;color:#9ad1a5;white-space:nowrap}.term i:nth-child(odd){color:#e8eaee}
+.ff{background:#f4f5f7;color:#222}.ff .tabs{display:flex;gap:4px}.ff .tabs b{height:14px;width:60px;border-radius:5px;background:#d9dce2}
+.ff .url{height:18px;border-radius:9px;background:#e4e6ea}.ff .pg{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:8px;align-content:start}
+.ff .pg u{height:56px;border-radius:8px;background:linear-gradient(135deg,#9bb8e8,#e6c8f0)}.app[data-app=Firefox] .hd{color:#222}
+.fm{background:#20242c;flex-direction:row}.fm .sb{width:70px;display:flex;flex-direction:column;gap:6px}.fm .sb b{height:10px;border-radius:4px;background:#3a4050}
+.fm .gr{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:10px;align-content:start}.fm .gr u{height:44px;border-radius:8px;background:#e0b85a;opacity:.9}
+.code{background:#161a22;font:11.5px/1.6 ui-monospace,monospace}.code i{font-style:normal;height:8px;border-radius:4px;background:#3a4560;display:block;margin:4px 0}
+.code i:nth-child(3n){background:#c9822e;width:40%}.code i:nth-child(3n+1){background:#4f8f7a;width:62%}.code i:nth-child(3n+2){width:78%}
+.mu{background:linear-gradient(160deg,#4a2f6b,#1d3a5e);align-items:center;justify-content:center;gap:10px}
+.mu u{width:min(46%,90px);aspect-ratio:1;border-radius:12px;background:linear-gradient(135deg,#ff9f0a,#ff375f);box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.mu b{font-size:12px}.mu i{font-style:normal;opacity:.7;font-size:11px}
+
+/* ---------- bar ---------- */
+.screen .bar{position:absolute;left:0;right:0;top:0;height:35px;padding:0 14px;display:grid;
+  grid-template-columns:1fr auto 1fr;align-items:center;color:var(--ink);font-weight:600;font-size:13.5px;
+  letter-spacing:-.01em;transition:color .4s,background .4s;user-select:none}
+/* iPadOS 17: không có nền, chữ nổi trên hình nền */
+.screen[data-bar="status"] .bar{text-shadow:0 0 6px var(--halo),0 0 1px var(--halo)}
+/* iPadOS 26: thanh menu kính nổi */
+/* dính mép trên và phủ kín: bar là cạnh trên của một lớp nền đặc (không blur, màu chỉnh được) nằm dưới cửa sổ;
+   mép, khe giữa cửa sổ và workspace trống đều mang màu này */
+.frame{position:absolute;inset:0;pointer-events:none;display:none;background:var(--frame)}
+.screen[data-bar="attached"] .frame{display:block}
+/* UI kính: cùng khung ôm app nhưng là một tấm kính khúc xạ khoét lỗ theo từng cửa sổ (mask + bộ lọc dựng bằng JS) */
+.screen[data-bar="attached"][data-ui="glass"] .frame{background:rgba(255,255,255,var(--tintf,.06));
+  backdrop-filter:var(--lgf,none);-webkit-backdrop-filter:var(--lgf,none)}
+.screen[data-bar="attached"][data-ui="glass"] .bar{text-shadow:0 0 6px var(--halo),0 0 1px var(--halo)}
+.screen[data-bar="attached"] .bar{left:0;right:0;top:0;height:35px;border-radius:0;background:none}
+.screen[data-bar="menu"] .bar{left:8px;right:8px;top:8px;height:35px;border-radius:17px;
+  background:rgba(255,255,255,.12);backdrop-filter:blur(22px) saturate(1.4);border:1px solid rgba(255,255,255,.18)}
+.screen.light[data-bar="menu"] .bar{background:rgba(255,255,255,.5)}
+.left,.right{display:flex;align-items:center;gap:14px;min-width:0}
+.right{justify-content:flex-end;gap:6px}
+.mode{background:var(--accent);color:#fff;border-radius:999px;padding:1px 9px;font-size:12px;text-shadow:none}
+
+/* workspace: số như bar thật; viên thuốc accent trượt (giọt kéo dãn) dưới số đang focus */
+.ws{position:relative;display:flex;height:26px;align-items:center;cursor:pointer}
+.ws .slot{position:relative;z-index:1;width:30px;height:26px;display:grid;place-items:center;font-weight:600;font-size:13px;
+  font-feature-settings:"tnum";opacity:.85;transition:color .15s,opacity .15s}
+.ws .slot:hover{opacity:1}
+.ws .slot.cur{color:#fff;opacity:1;text-shadow:none}
+.ws .drop{position:absolute;z-index:0;top:0;height:26px;border-radius:9px;background:var(--accent);pointer-events:none}
+.clock{font:inherit;color:inherit;background:none;border:0;padding:3px 10px;border-radius:9px;font-weight:600;cursor:default;font-feature-settings:"tnum"}
+
+/* nhóm bên phải: một vùng bấm duy nhất mở Quick Settings, như Control Center */
+.tray{display:flex;gap:10px;align-items:center;margin-left:6px;padding-right:4px;opacity:.9}
+.cluster{display:flex;align-items:center;gap:9px;padding:4px 12px;border-radius:999px;cursor:pointer;transition:background .2s}
+.cluster:hover{background:color-mix(in srgb,var(--ink) 12%,transparent)}
+.cluster.open{background:color-mix(in srgb,var(--ink) 20%,transparent)}
+svg.i{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.pct{font-weight:600;font-feature-settings:"tnum";font-size:13px}
+.batt{display:flex;align-items:center;gap:1px}
+.batt .body{width:25px;height:12.5px;border-radius:4px;border:1.4px solid currentColor;opacity:.95;position:relative;padding:1.5px}
+.batt .body b{display:block;height:100%;border-radius:2px;background:currentColor;width:87%}
+.batt .nub{width:2px;height:5px;border-radius:0 2px 2px 0;background:currentColor;opacity:.6}
+.batt.low .body b{background:#ff453a}.batt.chg .body b{background:#30d158}
+
+/* ---------- Quick Settings (giọt nước, như demo trước) ---------- */
+.stage{position:absolute;top:39px;right:10px;width:310px}
+.card{position:relative;transform-origin:0 0;color:#fff;visibility:hidden;display:flex;flex-direction:column;gap:10px;
+  font-weight:700;letter-spacing:-.01em}
+.screen.light .card{color:#111317}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.screen{--tile:var(--tile-glass,rgba(255,255,255,.06))}.screen.light{--tile:var(--tile-glass,rgba(255,255,255,.30))}
+.tile{--fill:var(--tile);display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;height:56px;border-radius:999px;cursor:pointer}
+.tile svg{width:20px;height:20px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tile .tx{display:flex;flex-direction:column;min-width:0;flex:1;line-height:1.15}
+.tile b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile i{font-style:normal;font-weight:600;opacity:.62;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .chev{width:16px;height:16px;opacity:.9}
+.tile.act{--fill:linear-gradient(180deg,rgba(10,132,255,.96),rgba(10,132,255,.80));--rim:1px solid rgba(255,255,255,.35);--in:inset 0 1px 0 rgba(255,255,255,.35);color:#fff}
+.tile.act i{opacity:.85}
+.row{--fill:var(--tile);display:flex;align-items:center;gap:10px;height:54px;padding:0 14px;border-radius:999px}
+.row svg{width:18px;height:18px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.row .tr{position:relative;flex:1;height:12px;border-radius:999px;background:rgba(255,255,255,.22)}
+.screen.light .row .tr{background:rgba(0,0,0,.14)}
+.row .fill{position:absolute;inset:0 auto 0 0;border-radius:999px;background:var(--accent)}
+.row .knob{position:absolute;top:50%;width:25px;height:25px;margin:-12.5px 0 0 -12.5px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 5px rgba(0,0,0,.35)}
+.media{--fill:var(--tile);display:flex;align-items:center;gap:8px;height:68px;padding:0 12px 0 16px;border-radius:30px}
+.media .tx{flex:1;min-width:0;line-height:1.2}
+.media b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.media i{display:block;font-style:normal;font-weight:500;opacity:.7;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.media .btn{--fill:var(--tile);width:38px;height:38px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto}
+.media .btn svg{width:15px;height:15px;fill:currentColor;stroke:none}
+.foot{display:flex;justify-content:flex-end;gap:22px;padding:2px 14px 0}
+.foot svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+.wall{position:absolute;inset:0;pointer-events:none}
+.wall svg{width:100%;height:100%;display:block}
+.lens{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:8px 22px;background:var(--panel);
+  border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:-4px 0 14px;font-size:13px;color:var(--dim)}
+.lens .pre{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.lens .pre button{font:inherit;color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer}
+.lens .pre button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.lens input{min-width:0;width:100%}
+.lens label{display:grid;grid-template-columns:78px minmax(0,1fr) 44px;align-items:center;gap:8px}
+.lens output{color:var(--fg);text-align:right;font-variant-numeric:tabular-nums}
+.lens .hint{grid-column:1/-1;font-size:12px}
+.legend{margin-top:12px;color:var(--dim);font-size:13px}
+.legend b{color:var(--fg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Bar kiểu iPadOS</h1>
+  <p class="sub">Nội dung bar giữ như máy. Nút UI: Phẳng = khung màu đặc; Kính = cùng khung ôm app nhưng là một tấm kính khúc xạ khoét lỗ theo từng cửa sổ (khi cửa sổ đang chuyển động thì chỉ là kính mờ nhạt, đứng yên 160 ms mới dựng khúc xạ). Bấm nhóm trạng thái để mở Quick Settings, số hoặc phím 1–4 để đổi workspace.</p>
+
+  <div class="controls">
+    <span>UI <span class="seg" id="uiSw"><button data-v="flat" class="on">Phẳng (màu đặc)</button><button data-v="glass">Kính</button></span></span>
+    <span>Kiểu bar <span class="seg" id="barKind"><button data-v="attached" class="on">Dính trên, ôm app</button><button data-v="status">Không nền (iPadOS 17)</button><button data-v="menu">Nổi (iPadOS 26)</button></span></span>
+    <span>Nền <span class="seg" id="wall"><button data-v="dark" class="on">Tối</button><button data-v="light">Sáng</button></span></span>
+    <label>Màu bar <input type="color" id="barColor" value="#0b1014"> <input type="range" id="barAlpha" min="0" max="100" value="100" style="width:90px"><output id="barAlphaO">100%</output></label>
+    <span>Chế độ <span class="seg" id="modeSw"><button data-v="" class="on">Thường</button><button data-v="resize">Resize</button></span></span>
+    <span>Kính Quick Settings <span class="seg" id="glassSw"><button data-v="on" class="on">Khúc xạ</button><button data-v="off">Blur thường</button><button data-v="flat">Phẳng (không kính, không blur)</button></span></span>
+    <label>tốc độ <span class="seg" id="slow"><button data-s="1" class="on">1×</button><button data-s="0.25">0.25×</button></span></label>
+  </div>
+
+  <div class="controls" id="swayCtl">
+    <span>Mở app <span class="seg" id="apps"></span></span>
+    <span class="seg" id="acts">
+      <button data-a="close">Đóng</button><button data-a="splith">Split ngang</button><button data-a="splitv">Split dọc</button>
+      <button data-a="left">◀</button><button data-a="up">▲</button><button data-a="down">▼</button><button data-a="right">▶</button>
+      <button data-a="move">Chuyển sang ws sau</button>
+    </span>
+    <span>Animation cửa sổ <span class="seg" id="animSw"><button data-v="sway">Hiện tại (200 ms ease-out)</button><button data-v="spring" class="on">Spring giữ vận tốc</button></span></span>
+  </div>
+
+  <div class="lens" id="lens">
+    <div class="pre" id="lensPre"><span>Preset</span></div>
+    <label>độ dày<input type="range" data-k="thickness" min="10" max="300" step="1"><output></output></label>
+    <label>bezel<input type="range" data-k="bezel" min="2" max="80" step="1"><output></output></label>
+    <label>ior<input type="range" data-k="ior" min="1.1" max="4" step="0.05"><output></output></label>
+    <label>scale<input type="range" data-k="scale" min="0" max="2" step="0.05"><output></output></label>
+    <label>blur<input type="range" data-k="blur" min="0" max="4" step="0.1"><output></output></label>
+    <label>specular<input type="range" data-k="specOp" min="0" max="1" step="0.05"><output></output></label>
+    <label>bão hòa<input type="range" data-k="specSat" min="0" max="6" step="0.1"><output></output></label>
+    <label>tint %<input type="range" data-k="tint" min="0" max="40" step="1"><output></output></label>
+    <div class="hint">Mỗi lần kéo, bản đồ khúc xạ của từng ô được dựng lại. Bezel tự kẹp theo bán kính bo của ô.</div>
+  </div>
+
+  <div class="screen dark" id="screen" data-bar="attached" data-glass="on" data-ui="flat">
+    <div class="wall" id="wall2"></div>
+    <div class="frame" id="frame"></div>
+    <div class="desk" id="desk"></div>
+    <div class="bar">
+      <div class="left">
+        <div class="ws" id="ws"></div>
+        <span class="mode" id="mode" hidden>resize</span>
+      </div>
+      <button class="clock" id="clock" type="button">Th 6 16 thg 10  22:18</button>
+      <div class="right">
+        <span class="cluster" id="cluster">
+          <svg class="i" viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19.2" r=".9" fill="currentColor"/></svg><svg class="i" viewBox="0 0 24 24"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg><svg class="i" viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>
+          <span class="batt" id="batt"><span class="body"><b></b></span><span class="nub"></span></span>
+          <span class="pct">87%</span>
+        </span>
+        <span class="tray" id="tray">
+          <svg class="i" viewBox="0 0 24 24"><path d="M12 3v10M8 9l4 4 4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
+          <svg class="i" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M8 20h8"/></svg>
+        </span>
+      </div>
+    </div>
+    <div class="stage"><div class="card" id="card">
+      <div class="tiles">
+        <div class="tile act glass" data-r="999"><svg viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19.2" r=".9" fill="currentColor"/></svg><span class="tx"><b>Wi-Fi</b><i>Home-5G</i></span><svg class="chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></div>
+        <div class="tile glass" data-r="999"><svg viewBox="0 0 24 24"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg><span class="tx"><b>Bluetooth</b><i>Tắt</i></span><svg class="chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></div>
+        <div class="tile glass" data-r="999"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><span class="tx"><b>Night Light</b><i>Tắt</i></span></div>
+        <div class="tile glass" data-r="999"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0M4 4l16 16"/></svg><span class="tx"><b>Không làm phiền</b><i>Tắt</i></span></div>
+      </div>
+      <div class="row glass" data-r="999"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/></svg><span class="tr"><span class="fill" style="width:62%"></span><span class="knob" style="left:62%"></span></span></div>
+      <div class="row glass" data-r="999"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4zM16 9a4 4 0 0 1 0 6"/></svg><span class="tr"><span class="fill" style="width:45%"></span><span class="knob" style="left:45%"></span></span><svg class="chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></div>
+      <div class="media glass" data-r="30"><span class="tx"><b>Tết này con sẽ về - Tu</b><i>Thanks Long Phiếu Lưu Ký</i></span>
+        <span class="btn glass" data-r="999"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></span><span class="btn glass" data-r="999"><svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></span><span class="btn glass" data-r="999"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></span></div>
+      <div class="foot"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/></svg><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><svg viewBox="0 0 24 24"><path d="M12 3v9M6.3 6.5a8 8 0 1 0 11.4 0"/></svg></div>
+    </div></div>
+  </div>
+
+  <p class="legend"><b>Nội dung như bar thật</b> (<code>~/.config/swayctl-center/generated/bar/config.json</code>): trái là workspace và nhãn chế độ, giữa là đồng hồ <code>%a %d %b  %H:%M</code>, phải là nhóm trạng thái (Wi-Fi, Bluetooth, âm thanh, pin, %) và tray. Chỉ đổi cách trình bày và chuyển động theo iPadOS.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (s, r = document) => r.querySelector(s);
+  const screen = $("#screen");
+  const state = { slow: 1 };
+
+  /* ---------- spring (giữ vị trí + vận tốc) ---------- */
+  function Spring(v) { this.v = v; this.vel = 0; this.target = v; }
+  Spring.prototype.step = function (dt, response, bounce) {
+    const w = 2 * Math.PI / response, k = w * w, c = 2 * Math.max(0.05, 1 - bounce) * w;
+    const n = Math.max(1, Math.ceil(dt / 0.001)), h = dt / n;
+    for (let i = 0; i < n; i++) { this.vel += (-k * (this.v - this.target) - c * this.vel) * h; this.v += this.vel * h; }
+    if (Math.abs(this.v - this.target) < 0.01 && Math.abs(this.vel) < 0.02) { this.v = this.target; this.vel = 0; }
+  };
+
+
+  /* ---------- kính lỏng: khúc xạ SVG (bê từ liquid-demo.html) ---------- */
+  const P = { thickness: 80, bezel: 60, ior: 3, scale: 1, blur: 0.3, specOp: 0.5, specSat: 4, tint: 6 }; // preset 'archisvaze demo' của liquid-demo.html
+  const SURF = {
+    demo: { rim: "none", in: "inset 0 0 20px -5px rgba(255,255,255,.45)", out: "0 4px 24px rgba(0,0,0,.18)" },
+    plan: { rim: "1px solid rgba(255,255,255,.30)", in: "inset 0 0 10px -4px rgba(255,255,255,.45)", out: "0 4px 24px rgba(0,0,0,.18)" },
+    lens: { rim: "1.5px solid rgba(255,255,255,.88)", in: "inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 1px rgba(0,0,0,.10)", out: "0 2px 10px rgba(0,0,0,.14)" },
+  };
+  const PRESETS = {
+    "archisvaze demo": { p: { thickness: 80, bezel: 60, ior: 3, scale: 1, blur: 0.3, specOp: 0.5, specSat: 4, tint: 6 }, css: "demo" },
+    "plan target": { p: { thickness: 80, bezel: 60, ior: 3, scale: 1, blur: 0.3, specOp: 0.5, specSat: 4, tint: 6 }, css: "plan" },
+    "approved": { p: { thickness: 200, bezel: 20, ior: 2.45, scale: 0.8, blur: 0.3, specOp: 0.55, specSat: 3, tint: 3 }, css: "lens" },
+    "mỏng, ít bẻ": { p: { thickness: 40, bezel: 24, ior: 1.8, scale: 0.6, blur: 0.3, specOp: 0.5, specSat: 2, tint: 6 }, css: "demo" },
+    "dày, bẻ mạnh": { p: { thickness: 160, bezel: 70, ior: 3.5, scale: 1.4, blur: 0.2, specOp: 0.6, specSat: 4, tint: 4 }, css: "demo" },
+  };
+  const squircle = x => Math.pow(1 - Math.pow(1 - x, 4), 0.25);
+  function refractionProfile(thick, bezel, ior, S) {
+    const eta = 1 / ior, out = new Float64Array(S);
+    for (let i = 0; i < S; i++) {
+      const x = i / S, y = squircle(x), dx = x < 1 ? 1e-4 : -1e-4, d = (squircle(x + dx) - y) / dx, m = Math.hypot(d, 1);
+      const nx = -d / m, ny = -1 / m, k = 1 - eta * eta * (1 - ny * ny);
+      if (k < 0) continue;
+      const sq = Math.sqrt(k), rx = -(eta * ny + sq) * nx, ry = eta - (eta * ny + sq) * ny;
+      out[i] = rx * ((y * bezel + thick) / ry);
+    }
+    return out;
+  }
+  function rimMaps(w, h, r, bezel, prof, maxDisp, angle) {
+    const mk = () => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const cd = mk(), cs = mk(), gd = cd.getContext("2d"), gs = cs.getContext("2d");
+    const id = gd.createImageData(w, h), is = gs.createImageData(w, h), d = id.data, sp = is.data, S = prof.length;
+    for (let i = 0; i < d.length; i += 4) { d[i] = 128; d[i + 1] = 128; d[i + 2] = 0; d[i + 3] = 255; }
+    const rSq = r * r, r1Sq = (r + 1) ** 2, rB = Math.max(r - bezel, 0) ** 2, wB = w - r * 2, hB = h - r * 2;
+    const sb = bezel * 2.5, rBs = Math.max(r - sb, 0) ** 2, sv = [Math.cos(angle), Math.sin(angle)];
+    for (let y1 = 0; y1 < h; y1++) for (let x1 = 0; x1 < w; x1++) {
+      const x = x1 < r ? x1 - r : x1 >= w - r ? x1 - r - wB : 0, y = y1 < r ? y1 - r : y1 >= h - r ? y1 - r - hB : 0;
+      const dSq = x * x + y * y; if (dSq > r1Sq || dSq < Math.min(rB, rBs) || dSq === 0) continue;
+      const dist = Math.sqrt(dSq), op = dSq < rSq ? 1 : 1 - (dist - r) / (Math.sqrt(r1Sq) - r); if (op <= 0) continue;
+      const cos = x / dist, sin = y / dist, idx = (y1 * w + x1) * 4;
+      if (dSq >= rB) {
+        const bi = Math.min(((r - dist) / bezel * S) | 0, S - 1), disp = prof[bi] || 0;
+        d[idx] = (128 + (-cos * disp / maxDisp) * 127 * op + .5) | 0; d[idx + 1] = (128 + (-sin * disp / maxDisp) * 127 * op + .5) | 0;
+      }
+      if (dSq >= rBs) {
+        const fs = r - dist /* pixel, như generateSpecularMap gốc: chỉ ~2px mép sáng */, dot = Math.abs(cos * sv[0] + -sin * sv[1]), edge = Math.sqrt(Math.max(0, 1 - (1 - fs) ** 2)), co = dot * edge, col = (255 * co) | 0;
+        sp[idx] = sp[idx + 1] = sp[idx + 2] = col; sp[idx + 3] = (col * co * op) | 0;
+      }
+    }
+    gd.putImageData(id, 0, 0); gs.putImageData(is, 0, 0);
+    return [cd.toDataURL(), cs.toDataURL()];
+  }
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  defs.setAttribute("width", 0); defs.setAttribute("height", 0); defs.style.position = "absolute";
+  defs.innerHTML = "<defs></defs>"; document.body.appendChild(defs);
+  function rebuildGlass() {
+    const L = defs.firstChild, keep = L.querySelector("#lgf");
+    L.innerHTML = ""; if (keep) L.appendChild(keep);   // giữ bộ lọc của khung
+    let n = 0;
+    screen.querySelectorAll(".glass").forEach(el => {
+      const w = Math.round(el.offsetWidth), h = Math.round(el.offsetHeight);
+      if (w < 4 || h < 4 || el.offsetParent === null) return;
+      const r = Math.min(+(el.dataset.r || parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0), w / 2, h / 2);
+      const bezel = Math.min(P.bezel, r - 1, Math.min(w, h) / 2 - 1); if (bezel < 2) return;
+      const prof = refractionProfile(P.thickness, bezel, P.ior, 128), maxDisp = Math.max(...prof.map(Math.abs)) || 1;
+      const [disp, spec] = rimMaps(w, h, r, bezel, prof, maxDisp, Math.PI / 3);
+      const id = "lg" + n++, f = document.createElementNS("http://www.w3.org/2000/svg", "filter");
+      f.setAttribute("id", id); f.setAttribute("x", "0%"); f.setAttribute("y", "0%"); f.setAttribute("width", "100%"); f.setAttribute("height", "100%");
+      f.innerHTML = `<feGaussianBlur in="SourceGraphic" stdDeviation="${P.blur}" result="b"/>
+        <feImage href="${disp}" x="0" y="0" width="${w}" height="${h}" result="dm"/>
+        <feDisplacementMap in="b" in2="dm" scale="${maxDisp * P.scale}" xChannelSelector="R" yChannelSelector="G" result="dp"/>
+        <feColorMatrix in="dp" type="saturate" values="${P.specSat}" result="ds"/>
+        <feImage href="${spec}" x="0" y="0" width="${w}" height="${h}" result="sl"/>
+        <feComposite in="ds" in2="sl" operator="in" result="sm"/>
+        <feComponentTransfer in="sl" result="sf"><feFuncA type="linear" slope="${P.specOp}"/></feComponentTransfer>
+        <feBlend in="sm" in2="dp" mode="normal" result="ws"/><feBlend in="sf" in2="ws" mode="normal"/>`;
+      L.appendChild(f); el.style.setProperty("--lg", `url(#${id})`);
+    });
+  }
+  function applyLook(css) {
+    const c = SURF[css] || SURF.demo, st = screen.style;
+    st.setProperty("--rim", c.rim); st.setProperty("--in", c.in); st.setProperty("--out", c.out);
+  }
+  function applyTint() {
+    const a = P.tint / 100; screen.style.setProperty("--fill", `rgba(255,255,255,${a})`); screen.style.setProperty("--tile-glass", `rgba(255,255,255,${a})`); screen.style.setProperty("--tintf", a);
+  }
+  const lens = $("#lens");
+  function syncLens() {
+    lens.querySelectorAll("input[data-k]").forEach(i => { i.value = P[i.dataset.k]; i.nextElementSibling.textContent = (+P[i.dataset.k]).toFixed(i.step < 1 ? 2 : 0); });
+  }
+  function applyPreset(name) {
+    const pr = PRESETS[name]; Object.assign(P, pr.p); applyLook(pr.css); applyTint(); syncLens();
+    lens.querySelectorAll(".pre button").forEach(b => b.classList.toggle("on", b.textContent === name)); rebuildSoon();
+  }
+  Object.keys(PRESETS).forEach(n => { const b = document.createElement("button"); b.textContent = n; b.onclick = () => applyPreset(n); $("#lensPre").appendChild(b); });
+  lens.querySelectorAll("input[data-k]").forEach(i => i.oninput = () => {
+    P[i.dataset.k] = +i.value; lens.querySelectorAll(".pre button").forEach(b => b.classList.remove("on"));
+    if (i.dataset.k === "tint") applyTint(); syncLens(); rebuildSoon();
+  });
+  let fgBuilt = "";   // chữ ký các cửa sổ mà khúc xạ của khung đã dựng cho
+  let rb = 0; const rebuildSoon = () => { fgBuilt = ""; cancelAnimationFrame(rb); rb = requestAnimationFrame(() => requestAnimationFrame(rebuildGlass)); };
+  addEventListener("resize", rebuildSoon);
+
+  /* ---------- hình nền họa tiết dày (để thấy khúc xạ) ---------- */
+  (function wallpaper() {
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const pal = ["#2f5d3a", "#3d7a4a", "#d9a441", "#e0b85a", "#1f4a46", "#4f8f7a", "#c9822e", "#7aa65b", "#17342f"];
+    let g = '<rect width="1000" height="560" fill="#14282a"/>';
+    for (let i = 0; i < 170; i++) {
+      const x = rnd() * 1000, y = rnd() * 560, rx = 18 + rnd() * 46, ry = rx * (0.35 + rnd() * 0.3), rot = rnd() * 180, c = pal[(rnd() * pal.length) | 0];
+      g += `<ellipse cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" rx="${rx.toFixed(0)}" ry="${ry.toFixed(0)}" fill="${c}" opacity=".9" transform="rotate(${rot.toFixed(0)} ${x.toFixed(0)} ${y.toFixed(0)})"/>` +
+           `<path d="M${(x - rx).toFixed(0)} ${y.toFixed(0)}H${(x + rx).toFixed(0)}" stroke="rgba(0,0,0,.25)" stroke-width="2" transform="rotate(${rot.toFixed(0)} ${x.toFixed(0)} ${y.toFixed(0)})"/>`;
+    }
+    $("#wall2").innerHTML = `<svg viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid slice">${g}</svg>`;
+  })();
+
+  /* ---------- đồng hồ: %a %d %b  %H:%M như config thật ---------- */
+  function tick() {
+    const d = new Date(), f = o => d.toLocaleDateString("vi", o);
+    $("#clock").textContent = f({ weekday: "short" }) + " " + d.getDate() + " " + f({ month: "short" }) + "  " +
+      String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+  tick(); setInterval(tick, 10000);
+
+  /* ---------- mô hình sway: cây tile, gap 8, workspace trượt ---------- */
+  const GAP = 8, WSN = 4;
+  let TOP = 35, TOPGAP = 0;   // đáy bar và khoảng hở trên cửa sổ
+  state.anim = "spring";
+  const SPR = { response: 0.34, bounce: 0.1 };
+  function Prop(v) { this.v = v; this.vel = 0; this.target = v; this.from = v; this.t = 1; }
+  Prop.prototype.set = function (x, instant) {
+    if (instant) { this.v = this.target = this.from = x; this.vel = 0; this.t = 1; return; }
+    if (x === this.target) return; this.target = x; this.from = this.v; this.t = 0;
+  };
+  Prop.prototype.step = function (dt) {
+    if (state.anim === "sway") {            // animation_manager.c: 200 ms, ease_out_cubic, retarget bắt đầu lại, mất vận tốc
+      if (this.t < 1) { this.t = Math.min(1, this.t + dt / 0.2); const p = this.t - 1; this.v = this.from + (this.target - this.from) * (p * p * p + 1); this.vel = 0; }
+      else this.v = this.target;
+    } else {
+      const w = 2 * Math.PI / SPR.response, k = w * w, c = 2 * (1 - SPR.bounce) * w, n = Math.max(1, Math.ceil(dt / 0.001)), h = dt / n;
+      for (let i = 0; i < n; i++) { this.vel += (-k * (this.v - this.target) - c * this.vel) * h; this.v += this.vel * h; }
+      if (Math.abs(this.v - this.target) < 0.05 && Math.abs(this.vel) < 0.1) { this.v = this.target; this.vel = 0; }
+      this.t = 1;
+    }
+  };
+  Prop.prototype.settled = function () { return this.v === this.target && (state.anim !== "sway" || this.t >= 1); };
+
+  const MOCK = {
+    Terminal: () => '<div class="m term"><i>$ swayctl-center ui</i><i>bar, quick, osd: ok</i><i>$ swaymsg -t get_tree</i><i>{ "type": "root" }</i><i>$ ▌</i></div>',
+    Firefox: () => '<div class="m ff"><div class="tabs"><b></b><b></b><b></b></div><div class="url"></div><div class="pg"><u></u><u></u><u></u><u></u><u></u><u></u></div></div>',
+    Files: () => '<div class="m fm"><div class="sb"><b></b><b></b><b></b><b></b></div><div class="gr"><u></u><u></u><u></u><u></u><u></u><u></u></div></div>',
+    Code: () => '<div class="m code">' + "<i></i>".repeat(14) + "</div>",
+    Music: () => '<div class="m mu"><u></u><b>Tết này con sẽ về</b><i>Thanks Long Phiếu Lưu Ký</i></div>',
+  };
+  const wsList = Array.from({ length: WSN }, () => ({ root: { type: "con", layout: "h", children: [], parent: null }, focus: null, el: null }));
+  const desk = $("#desk"), dying = [];
+  wsList.forEach(w => { w.el = document.createElement("div"); w.el.className = "wsv"; desk.appendChild(w.el); });
+  const deskPos = new Prop(0); let cur = 0, dw = 1000, dh = 560, nid = 0;
+  const wins = (n, o = []) => (n.type === "win" ? o.push(n) : n.children.forEach(c => wins(c, o)), o);
+  function layoutNode(n, r, out) {
+    if (n.type === "win") { out.set(n, r); return; }
+    const k = n.children.length; if (!k) return; const hz = n.layout === "h", sz = ((hz ? r.w : r.h) - GAP * (k - 1)) / k;
+    n.children.forEach((c, i) => layoutNode(c, hz ? { x: r.x + i * (sz + GAP), y: r.y, w: sz, h: r.h } : { x: r.x, y: r.y + i * (sz + GAP), w: r.w, h: sz }, out));
+  }
+  function arrange(ws, instant) {
+    dw = desk.clientWidth; dh = desk.clientHeight;
+    const out = new Map(); layoutNode(ws.root, { x: GAP, y: TOP + TOPGAP, w: dw - GAP * 2, h: dh - TOP - TOPGAP - GAP }, out);
+    out.forEach((r, w) => { w.r = r; w.x.set(r.x, instant); w.y.set(r.y, instant); w.w.set(r.w, instant); w.h.set(r.h, instant); });
+    wins(ws.root).forEach(w => w.el.classList.toggle("focus", ws.focus === w));
+  }
+  function collapse(n) {
+    while (n && n.parent) {
+      const p = n.parent;
+      if (n.children.length === 0) { p.children.splice(p.children.indexOf(n), 1); n = p; }
+      else if (n.children.length === 1) { const c = n.children[0]; c.parent = p; p.children[p.children.indexOf(n)] = c; n = p; }
+      else break;
+    }
+  }
+  function openWin(app, wi, instant) {
+    const ws = wsList[wi], f = ws.focus, par = f ? f.parent : ws.root;
+    const w = { type: "win", id: ++nid, app, parent: par, x: new Prop(0), y: new Prop(0), w: new Prop(1), h: new Prop(1), a: new Prop(1), s: new Prop(1) };
+    par.children.splice(f ? par.children.indexOf(f) + 1 : par.children.length, 0, w);
+    w.el = document.createElement("div"); w.el.className = "app"; w.el.dataset.app = app; w.el.innerHTML = '<div class="hd">' + app + "</div>" + MOCK[app]();
+    w.el.onclick = () => { if (cur !== wi) switchWs(wi); ws.focus = w; arrange(ws); };
+    ws.el.appendChild(w.el); ws.focus = w;
+    arrange(ws, instant); const r = w.r;       // cửa sổ mới hiện đúng chỗ; các cửa sổ khác co lại
+    w.x.set(r.x, true); w.y.set(r.y, true); w.w.set(r.w, true); w.h.set(r.h, true);
+    if (!instant) { w.a.set(0, true); w.a.set(1); w.s.set(0.8, true); w.s.set(1); }
+    refreshWs(instant); return w;
+  }
+  function closeWin(w, wi) {
+    const ws = wsList[wi]; if (!w) return;
+    const sibs = w.parent.children, i = sibs.indexOf(w); sibs.splice(i, 1);
+    const next = sibs[i] || sibs[i - 1]; collapse(w.parent);
+    ws.focus = next ? (next.type === "win" ? next : wins(next)[0]) : wins(ws.root)[0] || null;
+    w.a.set(0); w.s.set(0.8); w.el.style.pointerEvents = "none"; dying.push(w);
+    arrange(ws); refreshWs();
+  }
+  function split(wi, dir) {
+    const ws = wsList[wi], f = ws.focus; if (!f) return; const p = f.parent;
+    if (p.children.length === 1) p.layout = dir;
+    else { const con = { type: "con", layout: dir, children: [f], parent: p }; p.children[p.children.indexOf(f)] = con; f.parent = con; }
+    arrange(ws);
+  }
+  function focusDir(wi, d) {
+    const ws = wsList[wi], f = ws.focus; if (!f) return; const fc = { x: f.r.x + f.r.w / 2, y: f.r.y + f.r.h / 2 };
+    let best = null, bs = 1e9;
+    wins(ws.root).forEach(w => {
+      if (w === f) return; const cx = w.r.x + w.r.w / 2, cy = w.r.y + w.r.h / 2, dx = cx - fc.x, dy = cy - fc.y;
+      const ok = d === "left" ? dx < -4 : d === "right" ? dx > 4 : d === "up" ? dy < -4 : dy > 4; if (!ok) return;
+      const sc = (d === "left" || d === "right") ? Math.abs(dx) + 0.6 * Math.abs(dy) : Math.abs(dy) + 0.6 * Math.abs(dx);
+      if (sc < bs) { bs = sc; best = w; }
+    });
+    if (best) { ws.focus = best; arrange(ws); }
+  }
+  function moveToNext(wi) {
+    const ws = wsList[wi], f = ws.focus; if (!f) return; const to = (wi + 1) % WSN, app = f.app;
+    closeWin(f, wi); openWin(app, to); switchWs(to);
+  }
+
+  /* ---------- workspace trên bar: chỉ hiện ws có cửa sổ hoặc đang focus, như bar thật ---------- */
+  const wsEl = $("#ws"), eL = new Spring(0), eR = new Spring(30);
+  const slots = [];
+  for (let i = 0; i < WSN; i++) {
+    const sl = document.createElement("div"); sl.className = "slot"; sl.textContent = i + 1; sl.title = "Workspace " + (i + 1);
+    sl.onclick = () => switchWs(i); wsEl.appendChild(sl); slots.push(sl);
+  }
+  const drop = document.createElement("div"); drop.className = "drop"; wsEl.appendChild(drop);
+  let lastIdx = 0;
+  function refreshWs(instant) {
+    slots.forEach((sl, i) => { sl.style.display = (wins(wsList[i].root).length || i === cur) ? "" : "none"; sl.classList.toggle("cur", i === cur); });
+    const sl = slots[cur], dir = Math.sign(cur - lastIdx); lastIdx = cur;
+    const L = sl.offsetLeft, R = L + sl.offsetWidth;
+    eL.target = L; eR.target = R; eL.lead = dir < 0; eR.lead = dir >= 0;
+    if (instant) { eL.v = L; eR.v = R; eL.vel = eR.vel = 0; }
+  }
+  function switchWs(i) { cur = i; deskPos.set(i); refreshWs(); }
+  addEventListener("keydown", e => {
+    if (/^Digit[1-4]$/.test(e.code)) { const i = +e.code.slice(5) - 1; if (e.shiftKey) { const f = wsList[cur].focus; if (f && i !== cur) { const app = f.app; closeWin(f, cur); openWin(app, i); } } else switchWs(i); }
+    else if (e.key.startsWith("Arrow")) { e.preventDefault(); focusDir(cur, e.key.slice(5).toLowerCase()); }
+    else if (e.key === "q") closeWin(wsList[cur].focus, cur);
+    else if (e.key === "h") split(cur, "h"); else if (e.key === "v") split(cur, "v");
+  });
+  wsEl.addEventListener("wheel", e => {
+    e.preventDefault(); const vis = slots.map((sl, i) => i).filter(i => slots[i].style.display !== "none"), k = vis.indexOf(cur);
+    const n = vis[Math.min(vis.length - 1, Math.max(0, k + Math.sign(e.deltaY)))]; if (n !== undefined) switchWs(n);
+  }, { passive: false });
+
+  function stepDesk(dt) {
+    deskPos.step(dt);
+    wsList.forEach((ws, i) => {
+      const off = (i - deskPos.v) * dw; ws.el.style.transform = `translateX(${off.toFixed(1)}px)`; ws.el.style.visibility = Math.abs(i - deskPos.v) < 1.01 ? "visible" : "hidden";
+      wins(ws.root).forEach(w => paint(w));
+    });
+    for (let i = dying.length - 1; i >= 0; i--) { const w = dying[i]; paint(w); if (w.a.v < 0.02 || w.a.settled()) { w.el.remove(); dying.splice(i, 1); } }
+  }
+  function paint(w) {
+    [w.x, w.y, w.w, w.h, w.a, w.s].forEach(p => p.step(w._dt));
+    const el = w.el.style; el.left = w.x.v + "px"; el.top = w.y.v + "px"; el.width = Math.max(40, w.w.v) + "px"; el.height = Math.max(40, w.h.v) + "px";
+    el.opacity = Math.min(1, Math.max(0, w.a.v)); el.transform = `scale(${w.s.v})`;
+  }
+
+  /* ---------- Quick Settings: giọt nước ---------- */
+  const card = $("#card"), cluster = $("#cluster");
+  const Q = new Spring(0); let qOpen = false;
+  function toggleQ() { qOpen = !qOpen; Q.target = qOpen ? 1 : 0; cluster.classList.toggle("open", qOpen); }
+  cluster.onclick = toggleQ;
+  addEventListener("keydown", e => { if (e.code === "Space") { e.preventDefault(); toggleQ(); } });
+
+  function placeWater(v, vel, t) {
+    const k = Math.max(v, 0);
+    const clR = cluster.getBoundingClientRect(), stR = card.parentElement.getBoundingClientRect();
+    const ox = clR.left + clR.width / 2 - stR.left, oy = clR.top + clR.height / 2 - stR.top;
+    if (k < 0.004) { card.style.visibility = "hidden"; return; }
+    card.style.visibility = "visible";
+    const st = Math.max(-0.35, Math.min(0.35, vel * 0.045)), sx = k * (1 - st * 0.55), sy = k * (1 + st);
+    card.style.transform = `translate(${ox}px,${oy}px) scale(${sx},${sy}) translate(${-ox}px,${-oy}px)`;
+  }
+
+  /* ---------- vòng lặp ---------- */
+  /* ---------- UI kính: khung ôm app là một tấm kính, khoét lỗ theo cửa sổ, khúc xạ sát cạnh cửa sổ ---------- */
+  const frameEl = $("#frame"), FR = 12;   // 12 = bo góc cửa sổ
+  function frameRects() {
+    const out = [];
+    wsList.forEach((ws, i) => {
+      if (Math.abs(i - deskPos.v) > 1.01) return;
+      const off = (i - deskPos.v) * dw;
+      wins(ws.root).forEach(w => out.push({ x: w.x.v + off, y: w.y.v, w: w.w.v, h: w.h.v }));
+    });
+    dying.forEach(w => out.push({ x: w.x.v, y: w.y.v, w: w.w.v, h: w.h.v }));
+    return out;
+  }
+  function setMask(url) {
+    frameEl.style.webkitMaskImage = frameEl.style.maskImage = url;
+    frameEl.style.webkitMaskSize = frameEl.style.maskSize = "100% 100%";
+    frameEl.style.webkitMaskRepeat = frameEl.style.maskRepeat = "no-repeat";
+  }
+  function frameMask(rects) {   // cả màn hình trừ các ô cửa sổ bo góc (evenodd)
+    const W = screen.clientWidth, H = screen.clientHeight;
+    let d = `M0 0H${W}V${H}H0Z`;
+    rects.forEach(r => {
+      const x = r.x, y = r.y, w = Math.max(r.w, 2 * FR), h = Math.max(r.h, 2 * FR), q = FR;
+      d += `M${x + q} ${y}H${x + w - q}A${q} ${q} 0 0 1 ${x + w} ${y + q}V${y + h - q}A${q} ${q} 0 0 1 ${x + w - q} ${y + h}` +
+           `H${x + q}A${q} ${q} 0 0 1 ${x} ${y + h - q}V${y + q}A${q} ${q} 0 0 1 ${x + q} ${y}Z`;
+    });
+    setMask(`url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}'><path fill-rule='evenodd' d='${d}'/></svg>`)}")`);
+  }
+  // khoảng cách có dấu tới hình chữ nhật bo góc, và hướng ra xa nó
+  function sdRound(x, y, r, out) {
+    const cx = r.x + r.w / 2, cy = r.y + r.h / 2, hx = r.w / 2, hy = r.h / 2, px = x - cx, py = y - cy;
+    const qx = Math.abs(px) - (hx - FR), qy = Math.abs(py) - (hy - FR), ox = Math.max(qx, 0), oy = Math.max(qy, 0), len = Math.hypot(ox, oy);
+    out.d = len + Math.min(Math.max(qx, qy), 0) - FR;
+    if (len > 0) { out.gx = Math.sign(px) * ox / len; out.gy = Math.sign(py) * oy / len; }
+    else if (qx > qy) { out.gx = Math.sign(px) || 1; out.gy = 0; } else { out.gx = 0; out.gy = Math.sign(py) || 1; }
+  }
+  function buildFrameGlass(rects) {   // bản đồ khúc xạ + specular chỉ trong dải B px quanh mỗi cửa sổ
+    const W = screen.clientWidth, H = screen.clientHeight, B = Math.max(2, Math.min(P.bezel, 9));
+    const prof = refractionProfile(P.thickness, B, P.ior, 64), S = prof.length, maxDisp = Math.max(...prof.map(Math.abs)) || 1;
+    const mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = H; return c; };
+    const cd = mk(), cs = mk(), id = cd.getContext("2d").createImageData(W, H), is = cs.getContext("2d").createImageData(W, H);
+    const dd = id.data, sp = is.data;
+    for (let i = 0; i < dd.length; i += 4) { dd[i] = 128; dd[i + 1] = 128; dd[i + 2] = 0; dd[i + 3] = 255; }
+    // gần nhất và gần thứ hai (cửa sổ khác): bề rộng thật của một mép/khe = d + min(tới mép màn hình, tới cửa sổ kia)
+    const dist = new Float32Array(W * H).fill(1e9), dist2 = new Float32Array(W * H).fill(1e9), gxs = new Float32Array(W * H), gys = new Float32Array(W * H), t = {};
+    rects.forEach(r => {
+      const x0 = Math.max(0, Math.floor(r.x - B)), x1 = Math.min(W - 1, Math.ceil(r.x + r.w + B));
+      const y0 = Math.max(0, Math.floor(r.y - B)), y1 = Math.min(H - 1, Math.ceil(r.y + r.h + B));
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        sdRound(x + 0.5, y + 0.5, r, t); const k = y * W + x;
+        if (t.d < 0) continue;
+        if (t.d < dist[k]) { dist2[k] = dist[k]; dist[k] = t.d; gxs[k] = t.gx; gys[k] = t.gy; } else if (t.d < dist2[k]) dist2[k] = t.d;
+      }
+    });
+    const sv = [Math.cos(Math.PI / 3), Math.sin(Math.PI / 3)];
+    for (let k = 0; k < dist.length; k++) {
+      const dpx = dist[k]; if (dpx >= B) continue;
+      const x = k % W, y = (k / W) | 0, e = Math.min(x + 0.5, W - x - 0.5, y + 0.5, H - y - 0.5);
+      // dải khúc xạ không quá nửa bề rộng mép: hai cạnh của cùng một mép không chồng lên nhau
+      const bl = Math.max(1, Math.min(B, 0.5 * (dpx + Math.min(e, dist2[k]))));
+      if (dpx >= bl) continue;
+      const bi = Math.min((dpx / bl * S) | 0, S - 1), disp = (prof[bi] || 0) * (bl / B), i4 = k * 4;
+      dd[i4] = (128 + gxs[k] * disp / maxDisp * 127 + 0.5) | 0; dd[i4 + 1] = (128 + gys[k] * disp / maxDisp * 127 + 0.5) | 0;
+      if (dpx < 2) {   // mép sáng mảnh phía hướng ánh sáng
+        const dot = Math.abs(-gxs[k] * sv[0] + gys[k] * sv[1]), edge = Math.sqrt(Math.max(0, 1 - (1 - dpx) ** 2)), co = dot * edge, col = (255 * co) | 0;
+        sp[i4] = sp[i4 + 1] = sp[i4 + 2] = col; sp[i4 + 3] = (col * co) | 0;
+      }
+    }
+    cd.getContext("2d").putImageData(id, 0, 0); cs.getContext("2d").putImageData(is, 0, 0);
+    const L = defs.firstChild; L.querySelector("#lgf")?.remove();
+    const f = document.createElementNS("http://www.w3.org/2000/svg", "filter");
+    f.setAttribute("id", "lgf"); f.setAttribute("x", "0%"); f.setAttribute("y", "0%"); f.setAttribute("width", "100%"); f.setAttribute("height", "100%");
+    f.innerHTML = `<feGaussianBlur in="SourceGraphic" stdDeviation="${P.blur}" result="b"/>
+      <feImage href="${cd.toDataURL()}" x="0" y="0" width="${W}" height="${H}" result="dm"/>
+      <feDisplacementMap in="b" in2="dm" scale="${maxDisp * P.scale}" xChannelSelector="R" yChannelSelector="G" result="dp"/>
+      <feColorMatrix in="dp" type="saturate" values="${P.specSat}" result="ds"/>
+      <feImage href="${cs.toDataURL()}" x="0" y="0" width="${W}" height="${H}" result="sl"/>
+      <feComposite in="ds" in2="sl" operator="in" result="sm"/>
+      <feComponentTransfer in="sl" result="sf"><feFuncA type="linear" slope="${P.specOp}"/></feComponentTransfer>
+      <feBlend in="sm" in2="dp" mode="normal" result="ws"/><feBlend in="sf" in2="ws" mode="normal"/>`;
+    L.appendChild(f); frameEl.style.setProperty("--lgf", "url(#lgf)");
+  }
+  // khi cửa sổ đang chuyển động: khung chỉ là kính mờ nhạt (không khúc xạ); đứng yên 160 ms thì dựng khúc xạ
+  let fgSig = "", fgSince = 0;
+  function updateFrameGlass(now) {
+    const on = screen.dataset.ui === "glass" && screen.dataset.bar === "attached";
+    if (!on) { if (fgBuilt !== "off") { setMask(""); frameEl.style.removeProperty("--lgf"); fgBuilt = "off"; fgSig = ""; } return; }
+    const rects = frameRects(), sig = rects.map(r => [r.x, r.y, r.w, r.h].map(v => Math.round(v)).join(",")).join(";");
+    frameMask(rects);
+    if (sig !== fgSig) { fgSig = sig; fgSince = now; frameEl.style.removeProperty("--lgf"); if (fgBuilt !== "off") fgBuilt = ""; }
+    else if (fgBuilt !== sig && now - fgSince > 160) { buildFrameGlass(rects); fgBuilt = sig; }
+  }
+
+  let last = performance.now(), clock = 0;
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05) * state.slow; last = now; clock += dt;
+    // giọt workspace: mép dẫn nhanh, mép sau chậm → kéo dãn rồi co lại
+    [eL, eR].forEach(e => e.step(dt, e.lead ? 0.16 : 0.30, e.lead ? 0.12 : 0.05));
+    drop.style.left = eL.v + "px"; drop.style.width = Math.max(10, eR.v - eL.v) + "px";
+    wsList.forEach(ws => wins(ws.root).forEach(w => w._dt = dt)); dying.forEach(w => w._dt = dt);
+    stepDesk(dt); updateFrameGlass(now);
+    Q.step(dt, 0.42, 0.35); placeWater(Q.v, Q.vel, clock);
+    requestAnimationFrame(frame);
+  }
+  openWin("Firefox", 0, true); openWin("Terminal", 0, true); wsList[0].focus = wins(wsList[0].root)[0]; arrange(wsList[0], true);
+  openWin("Code", 1, true); openWin("Files", 1, true); split(1, "v"); openWin("Music", 1, true); arrange(wsList[1], true);
+  refreshWs(true); requestAnimationFrame(frame);
+  addEventListener("resize", () => wsList.forEach(w => arrange(w, true)));
+  card.style.visibility = "visible"; rebuildGlass(); card.style.visibility = "hidden"; rebuildSoon();
+  applyPreset("archisvaze demo");
+  if (location.hash.includes("open")) { qOpen = true; Q.v = Q.target = 1; cluster.classList.add("open"); }
+
+  /* ---------- điều khiển ---------- */
+  function seg(id, fn) {
+    $(id).onclick = e => { const b = e.target.closest("button"); if (!b) return;
+      document.querySelectorAll(id + " button").forEach(x => x.classList.toggle("on", x === b)); fn(b); };
+  }
+  function applyBarColor() {
+    const hex = $("#barColor").value, a = +$("#barAlpha").value / 100, n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    screen.style.setProperty("--frame", `rgba(${r},${g},${b},${a})`); $("#barAlphaO").textContent = Math.round(a * 100) + "%";
+    // chữ trên bar theo độ sáng màu đã chọn
+    const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255, dark = L > 0.55, st = screen.style;
+    st.setProperty("--ink", dark ? "#111317" : "#fff"); st.setProperty("--ink-dim", dark ? "rgba(17,19,23,.55)" : "rgba(255,255,255,.62)");
+    st.setProperty("--halo", dark ? "rgba(255,255,255,.45)" : "rgba(0,0,0,.35)");
+    // Quick Settings phẳng lấy màu từ bar: khối sáng hơn bar một chút (bar tối) hoặc tối hơn một chút (bar sáng)
+    st.setProperty("--tile-bar", `color-mix(in srgb, rgb(${r},${g},${b}) ${dark ? 92 : 88}%, ${dark ? "black" : "white"})`);
+    st.setProperty("--qs-ink", dark ? "#111317" : "#fff"); st.setProperty("--qs-track", dark ? "rgba(0,0,0,.14)" : "rgba(255,255,255,.18)");
+  }
+  $("#barColor").oninput = $("#barAlpha").oninput = applyBarColor; applyBarColor();
+  seg("#barKind", b => {
+    const k = b.dataset.v; screen.dataset.bar = k;
+    [TOP, TOPGAP] = k === "attached" ? [35, 0] : k === "menu" ? [43, GAP] : [35, GAP];
+    $(".stage").style.top = (TOP + 4) + "px";
+    wsList.forEach(w => arrange(w)); rebuildSoon();
+  });
+  seg("#glassSw", b => screen.dataset.glass = b.dataset.v);
+  // UI: phẳng = khung màu đặc + Quick Settings phẳng; kính = khung kính + Quick Settings khúc xạ
+  seg("#uiSw", b => {
+    const glassUi = b.dataset.v === "glass";
+    screen.dataset.ui = b.dataset.v; fgBuilt = "";
+    if (glassUi) ["--ink", "--ink-dim", "--halo"].forEach(k => screen.style.removeProperty(k)); else applyBarColor();
+    screen.dataset.glass = glassUi ? "on" : "flat";
+    document.querySelectorAll("#glassSw button").forEach(x => x.classList.toggle("on", x.dataset.v === screen.dataset.glass));
+    rebuildSoon();
+  });
+  seg("#wall", b => { screen.classList.remove("dark", "light"); screen.classList.add(b.dataset.v); });
+  seg("#modeSw", b => { const m = $("#mode"); m.hidden = !b.dataset.v; m.textContent = b.dataset.v; });
+  Object.keys(MOCK).forEach(n => { const b = document.createElement("button"); b.textContent = n; b.onclick = () => openWin(n, cur); $("#apps").appendChild(b); });
+  $("#acts").onclick = e => { const b = e.target.closest("button"); if (!b) return;
+    const a2 = b.dataset.a; if (a2 === "close") closeWin(wsList[cur].focus, cur); else if (a2 === "splith") split(cur, "h"); else if (a2 === "splitv") split(cur, "v");
+    else if (a2 === "move") moveToNext(cur); else focusDir(cur, a2); };
+  seg("#animSw", b => state.anim = b.dataset.v);
+  seg("#slow", b => state.slow = +b.dataset.s);
+  if (location.hash.includes("glass")) { $("#uiSw button[data-v=glass]").click(); updateFrameGlass(0); updateFrameGlass(1000); }  // dựng khúc xạ ngay (chụp ảnh)
+})();
+</script>
+</body>
+</html>

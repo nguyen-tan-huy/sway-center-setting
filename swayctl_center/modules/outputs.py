@@ -179,3 +179,37 @@ class OutputsModule:
     def new_outputs(self, stored: dict[str, Any], live: list[dict[str, Any]]) -> dict[str, Any]:
         """Monitors connected now but not in the store yet, in stored format."""
         return {identifier(o): from_live(o) for o in live if identifier(o) not in stored}
+
+
+def _built_in(name: str) -> bool:
+    return name.startswith(("eDP", "LVDS", "DSI"))
+
+
+def main_output(live: list[dict[str, Any]], primary: str = "") -> str:
+    """Name of the main monitor among the connected ones: the chosen one, else
+    the built-in screen, else the first. "" when none is active."""
+    active = [o for o in live if o.get("active")]
+    for o in active:
+        if primary and identifier(o) == primary:
+            return o["name"]
+    for o in active:
+        if _built_in(o["name"]):
+            return o["name"]
+    return active[0]["name"] if active else ""
+
+
+def fresh_config(live: list[dict[str, Any]], primary: str = "") -> dict[str, Any]:
+    """A clean config from the monitors connected right now: the built-in
+    screen first, the others to its right, tops aligned; everything the store
+    remembered about monitors that aren't here is dropped."""
+    main = main_output(live, primary)
+    outs = sorted((o for o in live if o.get("current_mode")),
+                  key=lambda o: (o["name"] != main, not _built_in(o["name"]), o["name"]))
+    config: dict[str, Any] = {}
+    x = 0
+    for o in outs:
+        cfg = from_live(o)
+        cfg.update(enabled=True, transform="normal", adaptive_sync=False, position=[x, 0])
+        config[identifier(o)] = cfg
+        x += round(logical_size(cfg, o)[0])
+    return config

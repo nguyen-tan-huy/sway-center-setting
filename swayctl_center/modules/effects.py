@@ -12,11 +12,17 @@ from typing import Any
 from .. import swayconfig, swayipc
 from . import Context
 
+# swayctl-frame: the frame style's pane under the windows (bar, edges and gaps in one piece, with a
+# cut-out for every window), see swayctl-bar's ui/frame.rs
+FRAME_NS = "swayctl-frame"
 # layer-shell namespaces of the panels we run
-PANEL_NAMESPACES = ("waybar", "swayctl-bar", "swayctl-quick", "swayctl-osd", "swayctl-notifications",
+PANEL_NAMESPACES = ("waybar", "swayctl-bar", "swayctl-frame", "swayctl-quick", "swayctl-osd", "swayctl-notifications",
                     "swayctl-launcher", "swayctl-traymenu",
                     "swaync-control-center",
                     "swaync-notification-window", "walker", "launcher")
+# Liquid glass is for these popups only - never the bar, the frame, a tray menu or any app window. (The
+# glass setting turns it on for exactly these; everything else is a plain material.)
+GLASS_NAMESPACES = ("swayctl-quick", "swayctl-osd", "swayctl-launcher", "swayctl-notifications")
 # swayctl-bar's own surfaces: glass-ready (they fill the surface exactly), with
 # the corner radius their CSS draws. OSD is one milky pill (volume/brightness):
 # a full-round radius so the compositor's glass is a pill, not a soft box.
@@ -30,10 +36,21 @@ GLASS_RADIUS = {"swayctl-osd": 22}
 # A wider bezel met itself across a pane's corners on a diagonal crease:
 # each edge bent on its own and a bubble or pill read as eight pieces.
 # (swayctl-fx now rounds those corners, so up to 3x this is allowed.)
-EDGE_CAP = {"chosua": 17, "swayctl-bar": 14, "swayctl-quick": 16,
+EDGE_CAP = {"chosua": 17, "swayctl-bar": 14, FRAME_NS: 7, "swayctl-quick": 16,
             "swayctl-launcher": 13, "swayctl-traymenu": 13, "swayctl-osd": 21,
             "swayctl-notifications": 13}
 EDGE_CAP_DEFAULT = 11  # libadwaita's own panes (the settings window), cards
+
+
+# How far the glass may bend what is behind it, whatever the sliders say. Past these the backdrop of a small
+# pane (a tile, a slider, a card) bleeds into it - colours from beside and below dragged across it. The
+# settings keep what was asked for; only what is sent to the compositor is held to this.
+GLASS_REFRACTION_MAX = 90
+GLASS_EDGE_SHARE_MAX = 150
+
+
+def glass_refraction(v: dict[str, Any]) -> int:
+    return min(int(v["glass_refraction"]), GLASS_REFRACTION_MAX)
 
 
 def glass_edge(target: str, share: int) -> int:
@@ -44,12 +61,13 @@ def glass_edge(target: str, share: int) -> int:
     share = int(share)
     if not 10 <= share <= 300:
         share = 100
+    share = min(share, GLASS_EDGE_SHARE_MAX)
     return max(1, round(cap * share / 100))
 # Shaped glass: the glass follows what's drawn in the surface (read from its
 # alpha), not the surface's box. Notifications (cards inside one big
 # transparent surface) and Quick Settings, whose panel is invisible: each
 # tile, slider and button is its own pane of glass.
-SHAPED = ("swayctl-bar", "swayctl-quick", "swayctl-traymenu", "swayctl-launcher", "swayctl-notifications", "walker", "swaync-control-center", "swaync-notification-window")
+SHAPED = ("swayctl-bar", FRAME_NS, "swayctl-quick", "swayctl-traymenu", "swayctl-launcher", "swayctl-notifications", "walker", "swaync-control-center", "swaync-notification-window")
 # Of those, the ones whose surface box is *bigger* than what's drawn (cards
 # floating inside one transparent surface): a compositor box shadow there
 # would ring the whole surface, so it stays off. The bar and Quick Settings
@@ -57,7 +75,12 @@ SHAPED = ("swayctl-bar", "swayctl-quick", "swayctl-traymenu", "swayctl-launcher"
 # pills / around the panel — off by request.
 CARD_SURFACE = ("swayctl-notifications", "walker",
                 "swaync-control-center", "swaync-notification-window")
-NO_SHADOW = CARD_SURFACE + ("swayctl-quick", "swayctl-traymenu", "swayctl-bar", "swayctl-launcher")
+# With the fork's shaped shadows ("shaped-shadow": the shadow of what a surface draws, not of its box)
+# the popups follow the Window shadows setting like windows do; only these never cast one (a halo
+# under the bar's pills and the frame's pane — off by request).
+NO_SHADOW = ("swayctl-bar", FRAME_NS)
+# Without it, a box shadow rings the whole surface: these stay off, as they always were
+BOX_SHADOW_UNFIT = CARD_SURFACE + ("swayctl-quick", "swayctl-traymenu", "swayctl-launcher")
 # these panels draw their own corners in CSS; the compositor's corner_radius
 # (rounded blur region, rounded shadow) must match them — the blur radius is
 # 0 in glass mode, so it can't be the source of truth there
@@ -66,6 +89,19 @@ PANE_RADIUS = ("swayctl-bar", "swayctl-quick")
 
 def is_swayfx(version: dict[str, Any] | None) -> bool:
     return bool(version) and "sway_original_version" in version
+
+
+ANIMATION_KINDS = ("anim_open_close", "anim_workspace", "anim_move", "anim_quick")
+
+
+def _scaled_alpha(color: str, percent: int) -> str:
+    """#rrggbbaa with its alpha scaled to `percent` of itself (the shadow of an unfocused window)."""
+    alpha = round(int(color[7:9], 16) * max(0, min(100, int(percent))) / 100)
+    return f"{color[:7]}{alpha:02x}"
+
+
+def _any_animation(v: dict[str, Any]) -> bool:
+    return any(v.get(k) for k in ANIMATION_KINDS)
 
 
 def fork_features(version: dict[str, Any] | None) -> list[str]:
@@ -98,7 +134,7 @@ GLASS_APP_TEXT = {SETTINGS_APP_ID: "none", "chosua": "light", PORTAL_APP_ID: "no
 # colour and the compositor inks it light or dark from what's behind the glass
 # (`glass text auto`); they ask nothing (no GET_BACKDROP) and pick nothing
 INK_APPS = (SETTINGS_APP_ID, "chosua")
-INK_LAYERS = ("swayctl-bar", "swayctl-quick", "swayctl-traymenu", "swayctl-launcher")
+INK_LAYERS = ("swayctl-quick", "swayctl-launcher")
 
 
 class EffectsModule:
@@ -127,16 +163,32 @@ class EffectsModule:
             f"shadows {_onoff(v['shadows'])}",
             f"shadow_blur_radius {v['shadow_blur_radius']}",
             f"shadow_color {shadow}",
+            f"shadow_inactive_color {_scaled_alpha(shadow, v['shadow_inactive'])}",
+            f"shadow_offset {v['shadow_offset_x']} {v['shadow_offset_y']}",
+            f"shadows_on_csd {_onoff(v['shadows_on_csd'])}",
             f"blur {_onoff(v['blur'])}",
             f"blur_passes {v['blur_passes']}",
             f"blur_radius {v['blur_radius']}",
             f"default_dim_inactive {v['dim_inactive']:g}",
-            f"animation_duration_ms {v.get('anim_duration', 200) if v['animations'] else 0}",
+            # one switch per kind; the length is only on while some kind is
+            f"animation_duration_ms {v.get('anim_duration', 200) if _any_animation(v) else 0}",
         ]
         if "animation-kinds" in fork_features(ctx.live):
-            cmds += [f"animations {kind} {'enable' if v.get(key, True) else 'disable'}"
+            cmds += [f"animations {kind} {'enable' if v.get(key) else 'disable'}"
                      for kind, key in (("open_close", "anim_open_close"), ("workspace", "anim_workspace"),
                                        ("move", "anim_move"))]
+        if "animation-popups" in fork_features(ctx.live):
+            # Quick Settings, the launcher and the volume pill: the compositor opens and closes them
+            cmds.append(f"animations popups {'enable' if v.get('anim_quick') else 'disable'}")
+        if "animation-slide" in fork_features(ctx.live):
+            cmds.append(f"animations workspace_slide {'enable' if v.get('anim_slide', True) else 'disable'}")
+        if "animation-spring" in fork_features(ctx.live):
+            cmds += [f"animation_curve {v.get('anim_curve', 'spring')}",
+                     f"animation_spring {v.get('anim_response', 340)} {v.get('anim_bounce', 8) / 100:g}"]
+        if "animation-apple" in fork_features(ctx.live):
+            cmds += [f"animation_close {v.get('anim_close_pace', 70) / 100:g} {v.get('anim_close_bounce', 0) / 100:g}",
+                     f"animation_popin {v.get('anim_popin', 94) / 100:g}",
+                     f"animation_fade {v.get('anim_fade', 150) / 100:g}"]
         glass = v["glass"] and "glass" in fork_features(ctx.live)
         if glass:
             # Demo lens (kube.io / winaviation): nearly clear, so the Snell
@@ -147,18 +199,21 @@ class EffectsModule:
         else:
             cmds += ["blur_saturation 1", "blur_brightness 1"]
         for ns in PANEL_NAMESPACES:
-            on = v["panels"] or (glass and (ns in GLASS_RADIUS or ns in SHAPED))
+            ns_glass = glass and ns in GLASS_NAMESPACES
+            on = v["panels"] or (ns_glass and (ns in GLASS_RADIUS or ns in SHAPED))
             if not on:
                 cmds.append(f'layer_effects "{ns}" "reset"')
                 continue
             r = GLASS_RADIUS.get(ns, radius)
             r = ctx.theme.tokens[r] if isinstance(r, str) and ctx.theme else (14 if isinstance(r, str) else r)
+            if ctx.theme is not None and ctx.theme.tokens["radius_lg"] == 0:
+                r = 0  # square interface style: the OSD's pill and every pane lose their corners
             if ns in PANE_RADIUS and ctx.theme is not None:
                 # match the CSS corners (native_css): .quick-panel radius_lg+6,
                 # window.bar radius_lg — modern style only
                 modern = ((ctx.values or {}).get("appearance") or {}).get("style") == "modern"
-                r = ctx.theme.tokens["radius_lg"] + 6 if ns == "swayctl-quick" else (
-                    ctx.theme.tokens["radius_lg"] if modern else 0)
+                lg = ctx.theme.tokens["radius_lg"]
+                r = (lg + 6 if lg else 0) if ns == "swayctl-quick" else 0   # the bar is square, attached
             # one effect per command over IPC
             # Shaped panes (bar modules, Quick Settings tiles) mask by the
             # surface's alpha: glass.frag reads that as the pane's *shape* —
@@ -166,20 +221,28 @@ class EffectsModule:
             # each capsule's outline, like the mock's per-control panes.
             # The OSD is one pill filling its surface, so it masks off and
             # follows corner_radius instead.
-            mask = not (glass and ns in GLASS_RADIUS)
-            cmds += [f'layer_effects "{ns}" "blur enable"',
+            if ns == FRAME_NS:
+                r = 0  # the cut-outs carry the corners, not the pane
+            mask = not (ns_glass and ns in GLASS_RADIUS)
+            # the bar sits on the wallpaper as a plain light/dark material: nothing to
+            # blur. Popups (Quick Settings, menus, notifications) float over windows
+            # and keep their blur, or the text behind shows through them.
+            flat_quick = ns in ("swayctl-quick", "swayctl-osd", "swayctl-launcher") and ((ctx.values or {}).get("appearance") or {}).get("quick_surface") == "flat"
+            minimal = ((ctx.values or {}).get("appearance") or {}).get("ui_style") == "minimal"  # cards, never blur
+            plain = (ns == "swayctl-bar" and not ns_glass) or flat_quick or minimal
+            cmds += [f'layer_effects "{ns}" "blur {"disable" if plain else "enable"}"',
                      f'layer_effects "{ns}" "blur_ignore_transparent {"enable" if mask else "disable"}"',
-                     f'layer_effects "{ns}" "shadows {"disable" if ns in NO_SHADOW else "enable"}"',
+                     f'layer_effects "{ns}" "shadows {"enable" if self.popup_shadow(ns, mask, v, ctx) else "disable"}"',
                      f'layer_effects "{ns}" "corner_radius {r}"']
             if "glass" in fork_features(ctx.live):
                 # shaped glass (notifications) needs the shaped-glass patch
                 shaped_ok = ns not in SHAPED or "glass-shaped" in fork_features(ctx.live)
-                use = glass and (ns in GLASS_RADIUS or ns in SHAPED) and shaped_ok
+                use = ns_glass and (ns in GLASS_RADIUS or ns in SHAPED) and shaped_ok
                 cmds.append(f'layer_effects "{ns}" "glass {"enable" if use else "disable"}"')
                 if use:
                     # the Liquid glass knobs: bar, Quick Settings and OSD
                     # follow the same settings the windows do
-                    cmds.append(f'layer_effects "{ns}" "glass_refraction {v["glass_refraction"]}"')
+                    cmds.append(f'layer_effects "{ns}" "glass_refraction {glass_refraction(v)}"')
                     # rim/specular light: always part of the glass patch
                     cmds.append(f'layer_effects "{ns}" "glass_highlight {v["glass_highlight"]:g}"')
                     if "glass-blur" in fork_features(ctx.live):
@@ -192,9 +255,10 @@ class EffectsModule:
                         cmds.append(f'layer_effects "{ns}" "glass_thickness {v["glass_thickness"]}"')
                         cmds.append(f'layer_effects "{ns}" "glass_chroma {v["glass_chroma"]:g}"')
         if "glass-windows" in fork_features(ctx.live):
-            # the settings window tags its panes light/dark itself (backdrop.py)
+            # no app window is glass (the settings window, chosua, the portal's dialogs): they are told once,
+            # so a rule an older run left in sway is overruled by this one
             text = "none" if "glass-text" in fork_features(ctx.live) else None
-            cmds += self.app_glass(glass, v, text, ctx)
+            cmds += self.app_glass(False, v, text, ctx)
         return cmds
 
     def apply_extra(self, section: str, v: dict[str, Any], changed: set[str] | None,
@@ -234,11 +298,12 @@ class EffectsModule:
         from .. import portalglass
         from .components import shell_milk
         feats = fork_features(ctx.live)
-        on = bool(v.get("glass")) and all(f in feats for f in ("glass", "glass-windows"))
+        on = False   # no app window is glass any more: this takes the frosted sheet away if an older run installed it
         css = ""
         if on and ctx.theme is not None:
             t = ctx.theme.tokens
-            css = portalglass.css(ctx.theme.dark, t["accent"], t["accent_fg"], shell_milk(v.get("glass_opacity", 50), True))
+            css = portalglass.css(ctx.theme.dark, t["accent"], t["accent_fg"], shell_milk(v.get("glass_opacity", 50), True),
+                                 v.get("corner_radius", 12))
         try:
             portalglass.sync(on and bool(css), css)
         except OSError as e:
@@ -255,6 +320,17 @@ class EffectsModule:
             return "auto"
         return "none"
 
+    @staticmethod
+    def popup_shadow(ns: str, mask: bool, v: dict[str, Any], ctx: Context | None) -> bool:
+        """Does this layer surface cast a shadow? It follows the Window shadows setting, as windows do:
+        a surface that draws a shape casts a shadow of that shape (needs the fork's shaped shadows; a
+        box shadow would ring the whole surface), one that fills its box a box shadow."""
+        if not v.get("shadows") or ns in NO_SHADOW:
+            return False
+        if mask and not (ctx is not None and "shaped-shadow" in fork_features(ctx.live)):
+            return ns not in BOX_SHADOW_UNFIT
+        return True
+
     def app_glass(self, glass: bool, v: dict[str, Any], text: str | None = None,
                   ctx: Context | None = None) -> list[str]:
         """The settings window as liquid glass: now (open windows) and for new
@@ -270,6 +346,10 @@ class EffectsModule:
                          f", glass thickness {v.get('glass_thickness', 200)}"
                          f", glass chroma {v.get('glass_chroma', 0.40):g}")
         ink = ctx is not None and "glass-ink" in fork_features(ctx.live)
+        # their shadow follows the Window shadows setting (a shadow of the panes they draw, not of
+        # their box) when the compositor can; else none, as it always was
+        shaped_shadow = ctx is not None and "shaped-shadow" in fork_features(ctx.live)
+        shadow = "enable" if (shaped_shadow and v.get("shadows")) else "disable"
 
         def what(app: str) -> str:
             if not glass:
@@ -277,9 +357,9 @@ class EffectsModule:
             app_text = GLASS_APP_TEXT.get(app, text) if text else None
             if app_text and app in INK_APPS and ink:
                 app_text = "auto"
-            return (f"glass enable, glass refraction {v['glass_refraction']}, glass blur {v['glass_blur']}"
+            return (f"glass enable, glass refraction {glass_refraction(v)}, glass blur {v['glass_blur']}"
                     + tune.replace("{edge}", str(glass_edge(app, v.get("glass_edge", 70))))
-                    + (f", glass text {app_text}" if app_text else "") + ", border none, shadows disable")
+                    + (f", glass text {app_text}" if app_text else "") + f", border none, shadows {shadow}")
 
         cmds = [f'[app_id="{app}"] {what(app)}' for app in GLASS_APPS]
         self.window_rules = {app: what(app) for app in GLASS_APPS}

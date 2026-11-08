@@ -7,7 +7,6 @@ use crate::watch::Subs;
 use gtk::prelude::*;
 use gtk::{gdk, glib};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use adw::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -68,84 +67,14 @@ pub fn build(app: &adw::Application, monitor: &gdk::Monitor, cfg: &Config, svc: 
     center.set_end_widget(Some(&side(&cfg.modules_right, "modules-right")));
     win.set_child(Some(&center));
 
-    // Text that stands out on what's actually behind each module: a live
-    // compositor sample (fallback: the config's wallpaper), retagged on
-    // layout changes and every couple of seconds so a wallpaper change is
-    // picked up too
-    let geo = monitor.geometry();
-    if cfg.backdrop.adaptive {
-        let (pos, m, bd, mon) = (cfg.position.clone(), cfg.margins, cfg.backdrop.clone(), monitor.clone());
-        // `full`: when the probe has nothing yet, fall back to capturing the
-        // whole frame (and then the wallpaper). Only on events: every
-        // backdrop read makes the compositor read pixels back synchronously
-        // and a full capture is a whole 3K frame — on a 1 s timer that was a
-        // 10–20 ms hitch of the cursor every second.
-        let retag = {
-            let (win, geo) = (win.downgrade(), geo);
-            move |full: bool| {
-                let Some(win) = win.upgrade() else { return };
-                // the compositor inks the text: nothing to sample or tag
-                let ink = crate::ui::backdrop::compositor_ink();
-                crate::ui::backdrop::set_key_ink(&win, ink);
-                if ink {
-                    return;
-                }
-                let (w, h) = (win.width() as f32, win.height() as f32);
-                let (mw, mh) = (geo.width() as f32, geo.height() as f32);
-                let origin = match pos.as_str() {
-                    "bottom" => (m[3] as f32, mh - h - m[2] as f32),
-                    "right" => (mw - w - m[1] as f32, m[0] as f32),
-                    _ => (m[3] as f32, m[0] as f32),
-                };
-                // what's behind the bar itself (glass probe: its own text left
-                // out), else the whole frame, else the wallpaper
-                let probed = crate::ui::backdrop::Grid::probe(&mon, "swayctl-bar", (win.width(), win.height()));
-                let grid = if full {
-                    probed.or_else(|| crate::ui::backdrop::Grid::capture(&mon)).or_else(|| {
-                        crate::ui::backdrop::Grid::new(&bd, geo.width(), geo.height())
-                    })
-                } else {
-                    probed
-                };
-                if let Some(grid) = grid {
-                    crate::ui::backdrop::tag_modules(&win, &grid, origin, &bd);
-                }
-            }
-        };
-        let retag = std::rc::Rc::new(retag);
-        // once laid out, and again when the workspaces (and so the layout) change
-        let r = retag.clone();
-        win.connect_map(move |_| {
-            let r = r.clone();
-            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || r(true));
-        });
-        let r = retag.clone();
-        subs.follow(&svc.sway.state, move |_| {
-            let r = r.clone();
-            // after the workspace buttons have been laid out again
-            glib::timeout_add_local_once(std::time::Duration::from_millis(100), move || r(true));
-        });
-        // and on a slow timer: the wallpaper (or a page scrolling under a
-        // fullscreen-adjacent bar) can change without any sway event. Probe
-        // only, and not often: each read stalls the compositor's frame (it
-        // was once a second — a visible cursor hitch every second at 120 Hz)
-        let r = retag.clone();
-        let alive = win.downgrade();
-        glib::timeout_add_seconds_local(10, move || {
-            if alive.upgrade().is_none() {
-                return glib::ControlFlow::Break; // this bar was rebuilt
-            }
-            r(false);
-            glib::ControlFlow::Continue
-        });
-    }
+    // The bar is never glass, so there is nothing behind it to sample: its text is the theme's own.
     win
 }
 
-fn module(name: &str, cfg: &Config, svc: &Rc<Services>, quick: &Rc<QuickSettings>, output: &str,
+fn module(name: &str, cfg: &Config, svc: &Rc<Services>, quick: &Rc<QuickSettings>, _output: &str,
           monitor: &gdk::Monitor, subs: &Subs) -> Option<gtk::Widget> {
     Some(match name {
-        "workspaces" => workspaces(svc, output, subs).upcast(),
+        "workspaces" => workspaces(svc, subs).upcast(),
         "mode" => {
             let l = gtk::Label::builder().css_classes(["mode"]).visible(false).build();
             let l2 = l.clone();
@@ -190,8 +119,6 @@ struct WsDrop {
     placed: Cell<bool>,
     /// each button's span along the fixed, as of the last layout
     spans: RefCell<Vec<(gtk::Widget, f64, f64)>>,
-    /// the springs of the left and the right edge
-    anims: RefCell<Vec<adw::SpringAnimation>>,
 }
 
 impl WsDrop {
@@ -206,18 +133,10 @@ impl WsDrop {
         None
     }
 
-    fn stop(&self) {
-        for a in self.anims.take() {
-            a.pause();
-        }
-    }
-
-    /// Head for the focused button; snap there instead when `animate` is off
-    /// or the blob isn't on screen yet.
-    fn retarget(self: &Rc<Self>, animate: bool) {
+    /// Move the blob to the focused button. It snaps there: the bar has no animation of its own.
+    fn retarget(self: &Rc<Self>) {
         let Some(btn) = self.focused_button() else {
             // the focused workspace is on another output
-            self.stop();
             self.blob.set_visible(false);
             self.placed.set(false);
             self.measure();
@@ -232,56 +151,16 @@ impl WsDrop {
         self.rest.set((w, y, h));
         self.measure();
         let (l, r) = (x, x + w);
-        if !self.placed.get() || !animate || !self.blob.is_mapped() {
-            self.stop();
-            self.goal.set((l, r));
-            self.left.set(l);
-            self.right.set(r);
-            self.placed.set(true);
-            self.blob.set_visible(true);
-            self.paint();
-            return;
-        }
-        if self.goal.get() == (l, r) {
-            return;
-        }
         self.goal.set((l, r));
-        // the edge on the side it's moving to leads: quick, a touch of
-        // overshoot; the other trails: slow and soft
-        let right_leads = l + r >= self.left.get() + self.right.get();
-        let lead = adw::SpringParams::new(0.7, 1.0, 380.0);
-        let trail = adw::SpringParams::new(0.95, 1.0, 130.0);
-        let (pl, pr) = if right_leads { (trail, lead) } else { (lead, trail) };
-        // a move interrupted midway carries its speed into the next
-        let old = self.anims.take();
-        let (mut vl, mut vr) = (0.0, 0.0);
-        if old.len() == 2 {
-            vl = old[0].velocity();
-            vr = old[1].velocity();
-        }
-        for a in &old {
-            a.pause();
-        }
-        let edge = |from: f64, to: f64, v0: f64, params: adw::SpringParams, right: bool| {
-            let weak = Rc::downgrade(self);
-            let target = adw::CallbackAnimationTarget::new(move |v| {
-                let Some(me) = weak.upgrade() else { return };
-                if right { me.right.set(v) } else { me.left.set(v) }
-                me.paint();
-            });
-            let a = adw::SpringAnimation::new(&self.fixed, from, to, params, target);
-            a.set_initial_velocity(v0);
-            a.set_epsilon(0.05);
-            a.play();
-            a
-        };
-        let al = edge(self.left.get(), l, vl, pl, false);
-        let ar = edge(self.right.get(), r, vr, pr, true);
-        *self.anims.borrow_mut() = vec![al, ar];
+        self.left.set(l);
+        self.right.set(r);
+        self.placed.set(true);
+        self.blob.set_visible(true);
+        self.paint();
     }
 
     /// Two frames on, when the buttons have been laid out again.
-    fn retarget_later(self: &Rc<Self>, animate: bool) {
+    fn retarget_later(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         let ticks = Cell::new(0u8);
         self.fixed.add_tick_callback(move |_, _| {
@@ -290,7 +169,7 @@ impl WsDrop {
                 return glib::ControlFlow::Continue;
             }
             if let Some(me) = weak.upgrade() {
-                me.retarget(animate);
+                me.retarget();
             }
             glib::ControlFlow::Break
         });
@@ -344,7 +223,7 @@ fn set_ws_state(btn: &gtk::Widget, ws: &sway::Workspace) {
     }
 }
 
-fn workspaces(svc: &Rc<Services>, output: &str, subs: &Subs) -> gtk::Overlay {
+fn workspaces(svc: &Rc<Services>, subs: &Subs) -> gtk::Overlay {
     let row = gtk::Box::builder().css_classes(["workspace-row"]).spacing(2).build();
     let fixed = gtk::Fixed::builder().can_target(false).build();
     let blob = gtk::Box::builder().css_classes(["workspace", "focused", "ws-blob"])
@@ -357,13 +236,12 @@ fn workspaces(svc: &Rc<Services>, output: &str, subs: &Subs) -> gtk::Overlay {
     root.set_measure_overlay(&row, true);
     let drop = Rc::new(WsDrop {
         fixed, blob, row: row.clone(), left: Cell::new(0.0), right: Cell::new(0.0), goal: Cell::new((0.0, 0.0)),
-        rest: Cell::new((1.0, 0.0, 0.0)), placed: Cell::new(false), spans: RefCell::new(Vec::new()), anims: RefCell::new(Vec::new()),
+        rest: Cell::new((1.0, 0.0, 0.0)), placed: Cell::new(false), spans: RefCell::new(Vec::new()),
     });
-    let output = output.to_owned();
     let names: RefCell<Vec<String>> = RefCell::new(Vec::new());
     let d = drop.clone();
     subs.follow(&svc.sway.state, move |s| {
-        let list: Vec<&sway::Workspace> = s.workspaces.iter().filter(|w| output.is_empty() || w.output == output).collect();
+        let list: Vec<&sway::Workspace> = s.workspaces.iter().collect(); // every output's workspaces, not just this bar's
         let now: Vec<String> = list.iter().map(|w| w.name.clone()).collect();
         // buttons are only rebuilt when workspaces come or go; a plain focus
         // change keeps them (and so the blob has something to slide between)
@@ -374,7 +252,7 @@ fn workspaces(svc: &Rc<Services>, output: &str, subs: &Subs) -> gtk::Overlay {
             }
             for ws in &list {
                 let btn = gtk::Button::builder().label(&ws.name).css_classes(["workspace", "flat"]).build();
-                let target = if ws.num >= 0 { format!("workspace number {}", ws.num) } else {
+                let target = if ws.num >= 0 { format!("exec swayctl-center action workspace.{}", ws.num) } else {
                     format!("workspace \"{}\"", ws.name.replace('"', "\\\""))
                 };
                 btn.connect_clicked(move |_| sway::command(&target));
@@ -388,11 +266,11 @@ fn workspaces(svc: &Rc<Services>, output: &str, subs: &Subs) -> gtk::Overlay {
             set_ws_state(&btn, ws);
             child = btn.next_sibling();
         }
-        if rebuilt { d.retarget_later(true) } else { d.retarget(true) }
+        if rebuilt { d.retarget_later() } else { d.retarget() }
     });
     // placed once the bar is on screen
     let d = drop.clone();
-    root.connect_map(move |_| d.retarget_later(false));
+    root.connect_map(move |_| d.retarget_later());
     // scroll through workspaces like most bars
     let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE);
     scroll.connect_scroll(|_, _dx, dy| {
@@ -442,7 +320,7 @@ fn status(svc: &Rc<Services>, quick: &Rc<QuickSettings>, monitor: &gdk::Monitor,
     // spacing from CSS (border-spacing on .status-row), so bar.padding can set it
     let row = gtk::Box::builder().css_classes(["status-row"]).build();
     let net = gtk::Image::new();
-    let bt = gtk::Image::from_icon_name("bluetooth-active-symbolic");
+    let bt = gtk::Image::from_icon_name(icons::bluetooth());
     let vol = gtk::Image::new();
     let bat = gtk::Image::new();
     let pct = gtk::Label::builder().css_classes(["battery-percent"]).build();
@@ -532,7 +410,7 @@ fn tray(svc: &Rc<Services>, subs: &Subs) -> Option<gtk::Box> {
 }
 
 fn tray_icon(item: &tray::Item) -> gtk::Image {
-    let image = gtk::Image::builder().pixel_size(16).build();
+    let image = gtk::Image::new(); // sized by the sheet (-gtk-icon-size, from bar.height)
     if !item.icon_theme_path.is_empty() {
         if let Some(display) = gdk::Display::default() {
             let theme = gtk::IconTheme::for_display(&display);

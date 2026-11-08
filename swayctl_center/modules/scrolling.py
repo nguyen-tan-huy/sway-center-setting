@@ -94,8 +94,30 @@ def service_config(v: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return cfg
 
 
+# Chromium-based apps turn the compositor's pixel deltas into a longer scroll
+# than GTK apps do: their windows get scrolling.browser_scale
+CHROMIUM_APPS = ("google-chrome.*|chromium.*|brave-browser.*|microsoft-edge.*|vivaldi.*|opera|"
+                 "code|code-oss|discord|slack|obsidian|Electron")
+
+
+# Windows where Page Up / Page Down scroll the page (browsers and document
+# viewers); in editors and terminals the keys move the cursor, so they stay as they are
+PAGE_KEY_APPS = ("google-chrome.*|chromium.*|firefox.*|brave-browser.*|microsoft-edge.*|vivaldi.*|opera|zen.*|"
+                 "org.gnome.Evince|evince|org.gnome.Papers|zathura|org.kde.okular|okular|mupdf")
+
+
 def compositor_commands(v: dict[str, Any]) -> list[str]:
     cmds = []
+    if "scroll-page-keys" in _compositor["features"]:
+        on = "enable" if v.get("page_keys", True) and (v["touchpad_smooth"] or v["mouse_smooth"]) else "disable"
+        crit = f'app_id="^({PAGE_KEY_APPS})$"'
+        share = f"{v.get('page_share', 0.5):g}"
+        cmds += [f"for_window [{crit}] scroll_page_keys {on} {share}", f"[{crit}] scroll_page_keys {on} {share}"]
+    if "scroll-scale" in _compositor["features"]:
+        scale = f"{v.get('browser_scale', 1.0):g}"
+        crit = f'app_id="^({CHROMIUM_APPS})$"'
+        # the rule for windows opened from now on, and the same for those open already
+        cmds += [f"for_window [{crit}] scroll_scale {scale}", f"[{crit}] scroll_scale {scale}"]
     for dev, kind in SWAY_TYPES.items():
         on = "enabled" if v[f"{dev}_smooth"] else "disabled"
         cmds += [f"input type:{kind} smooth_scroll {on}",
@@ -160,7 +182,7 @@ def install(data_dir: Path) -> str | None:
 
 class ScrollingModule:
     sections = ("scrolling",)
-    tolerated_errors = ()
+    tolerated_errors = ("No matching node.",)  # no Chromium window open to scale yet
     depends_on: tuple[str, ...] = ()
 
     def snapshot(self, ipc) -> dict[str, Any]:

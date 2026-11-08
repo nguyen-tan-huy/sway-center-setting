@@ -4,7 +4,7 @@
 //! outside (the catcher) or Escape closes it.
 
 use crate::services::tray::{self, MenuNode};
-use crate::ui::{backdrop, catcher};
+use crate::ui::catcher;
 use gtk::prelude::*;
 use gtk::{gdk, glib};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
@@ -43,25 +43,52 @@ pub fn show(tray: &Rc<tray::Tray>, item: &tray::Item, root: &MenuNode, anchor: &
     win.set_monitor(Some(&monitor));
     win.set_layer(Layer::Overlay);
     win.set_keyboard_mode(KeyboardMode::Exclusive);
-    backdrop::set_key_ink(&win, backdrop::compositor_ink());
+    // margins from the screen's edge, not from under the bar's reserved strip
+    win.set_exclusive_zone(-1);
 
-    // under the icon: the bar's top-left corner (its layer margins) plus the
-    // icon's place in the bar; the side the icon is on keeps the menu on screen
+    // next to the icon, on the side the bar leaves free: below a top bar, above a
+    // bottom one, beside a left or right one. Margins count from the screen's
+    // edge (exclusive zone -1), so the bar's own reserved strip isn't added.
     let geo = monitor.geometry();
-    let bounds = anchor.compute_bounds(&bar);
     let (bx, by) = bar_origin(&bar, &monitor);
-    let (x, w, bottom_y) = match bounds {
-        Some(b) => (bx + b.x() as i32, b.width() as i32, by + (b.y() + b.height()) as i32),
-        None => (geo.width() / 2, 0, by + bar.height()),
+    let (ix, iy, iw, ih) = match anchor.compute_bounds(&bar) {
+        Some(b) => (bx + b.x() as i32, by + b.y() as i32, b.width() as i32, b.height() as i32),
+        None => (geo.width() / 2, by, 0, bar.height()),
     };
-    win.set_anchor(Edge::Top, true);
-    win.set_margin(Edge::Top, bottom_y + 6);
-    if x + w / 2 > geo.width() / 2 {
-        win.set_anchor(Edge::Right, true);
-        win.set_margin(Edge::Right, (geo.width() - (x + w)).max(8));
+    let vertical = bar.is_anchor(Edge::Top) && bar.is_anchor(Edge::Bottom);
+    const GAP: i32 = 6;
+    if vertical {
+        if bar.is_anchor(Edge::Left) && !bar.is_anchor(Edge::Right) {
+            win.set_anchor(Edge::Left, true);
+            win.set_margin(Edge::Left, ix + iw + GAP);
+        } else {
+            win.set_anchor(Edge::Right, true);
+            win.set_margin(Edge::Right, (geo.width() - ix + GAP).max(8));
+        }
+        // level with the icon; from the bottom edge when it sits in the lower half
+        if iy + ih / 2 > geo.height() / 2 {
+            win.set_anchor(Edge::Bottom, true);
+            win.set_margin(Edge::Bottom, (geo.height() - (iy + ih)).max(8));
+        } else {
+            win.set_anchor(Edge::Top, true);
+            win.set_margin(Edge::Top, iy.max(8));
+        }
     } else {
-        win.set_anchor(Edge::Left, true);
-        win.set_margin(Edge::Left, x.max(8));
+        if bar.is_anchor(Edge::Bottom) && !bar.is_anchor(Edge::Top) {
+            win.set_anchor(Edge::Bottom, true);
+            win.set_margin(Edge::Bottom, geo.height() - iy + GAP);
+        } else {
+            win.set_anchor(Edge::Top, true);
+            win.set_margin(Edge::Top, iy + ih + GAP);
+        }
+        // the icon's half of the screen keeps the menu on screen
+        if ix + iw / 2 > geo.width() / 2 {
+            win.set_anchor(Edge::Right, true);
+            win.set_margin(Edge::Right, (geo.width() - (ix + iw)).max(8));
+        } else {
+            win.set_anchor(Edge::Left, true);
+            win.set_margin(Edge::Left, ix.max(8));
+        }
     }
 
     let pane = gtk::Box::builder()
@@ -101,7 +128,13 @@ pub fn show(tray: &Rc<tray::Tray>, item: &tray::Item, root: &MenuNode, anchor: &
 /// Where the bar's surface sits on the monitor, logical px.
 fn bar_origin(bar: &gtk::Window, monitor: &gdk::Monitor) -> (i32, i32) {
     let geo = monitor.geometry();
-    let left = if bar.is_anchor(Edge::Left) { bar.margin(Edge::Left) } else { (geo.width() - bar.width()) / 2 };
+    let left = if bar.is_anchor(Edge::Left) {
+        bar.margin(Edge::Left)
+    } else if bar.is_anchor(Edge::Right) {
+        geo.width() - bar.width() - bar.margin(Edge::Right)
+    } else {
+        (geo.width() - bar.width()) / 2
+    };
     let top = if bar.is_anchor(Edge::Top) {
         bar.margin(Edge::Top)
     } else {

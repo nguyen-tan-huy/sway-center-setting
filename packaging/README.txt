@@ -6,6 +6,8 @@ What this folder contains
   swayctl-center-*.pkg.tar.zst    the settings app (also starts the daemon)
   swayctl-bar-*.pkg.tar.zst       the bar, Quick Settings, notifications, OSD, lock screen
   swayctl-fx-*.pkg.tar.zst        SwayFX fork (liquid glass, smooth scrolling) as swayctl-fx
+  chosua-*.pkg.tar.zst            ChoSua, Matrix chat client (when included)
+  chodilamide-ide-*.pkg.tar.zst   ChoDiLamIDE (when included)
   install.sh                      interactive installer (pacman -U, optional extras)
   README.txt                      this file
 

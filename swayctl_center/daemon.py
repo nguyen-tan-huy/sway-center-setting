@@ -11,6 +11,8 @@ import json
 import logging
 import os
 import signal
+import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +23,7 @@ from gi.repository import Gio, GLib  # noqa: E402
 
 from datetime import datetime, timedelta  # noqa: E402
 
-from . import backup, schema, swayconfig, swayipc, themes  # noqa: E402
+from . import backup, schema, swayconfig, swayipc, themes, wsguard  # noqa: E402
 from .modules import Context, by_section  # noqa: E402
 from .modules import appearance  # noqa: E402
 from .state import State  # noqa: E402
@@ -133,6 +135,8 @@ class Daemon:
         self.conn: Gio.DBusConnection | None = None
         self._debounce_id = 0
         self._outputs_id = 0
+        # recent (time, workspaces, active outputs), to know where things were before a hotplug
+        self._ws_history: deque = deque(maxlen=30)
 
     # --- lifecycle -------------------------------------------------------
 
@@ -143,6 +147,22 @@ class Daemon:
             if self.store.is_set(section, name):
                 log.info("now using the new default for %s.%s", section, name)
                 self.store.reset(section, name)
+        # the interface style "floating" (square, floating) became part of "flat"
+        if self.store.is_set("appearance", "ui_style") and self.store.effective()["appearance"]["ui_style"] == "floating":
+            from . import presets
+            self.store.set("appearance", "ui_style", "flat")
+            self.store.set_many(presets.ui_style_values("flat"))
+        # the one "animations" switch became a switch per kind: carry what it said over, once
+        if self.store.is_set("effects", "animations"):
+            on = bool(self.store.effective()["effects"]["animations"])
+            for name in ("anim_open_close", "anim_workspace", "anim_move", "anim_quick"):
+                if not self.store.is_set("effects", name):
+                    self.store.set("effects", name, on)
+            self.store.reset("effects", "animations")
+        # "rounded" used to be paired with the glass the user had on: now that is "liquid"
+        eff = self.store.effective()
+        if self.store.is_set("appearance", "ui_style") and eff["appearance"]["ui_style"] == "rounded" and eff["effects"]["glass"]:
+            self.store.set("appearance", "ui_style", "liquid")
         # waybar-style values: module lists convert on load (schema); clock
         # formats lose waybar's "{:...}" wrapper
         stored = self.store.scope_values(schema.lookup("bar", "clock_format").scope).get("bar", {})
@@ -157,6 +177,8 @@ class Daemon:
             if "status" in bar[side] and any("status" in bar[s] for s in sides[i + 1:]):
                 self.store.set("bar", side, [m for m in bar[side] if m != "status"])
                 bar[side] = [m for m in bar[side] if m != "status"]
+        # the Desktop page's profile choices show what the stored values amount to
+        self._name_profiles()
 
     def run(self) -> None:
         self.store.load()
@@ -185,7 +207,9 @@ class Daemon:
 
         self._watch_store()
         self._watch_sway()
+        self._record_workspaces(force=True)
         GLib.timeout_add_seconds(SCHEDULE_CHECK_S, self._check_schedule)
+        GLib.timeout_add(500, self._priority_tick)
         node = Gio.DBusNodeInfo.new_for_xml(INTROSPECTION)
         Gio.bus_own_name(
             Gio.BusType.SESSION, BUS_NAME, Gio.BusNameOwnerFlags.NONE,
@@ -199,6 +223,8 @@ class Daemon:
     def _quit(self, reason: str = "") -> bool:
         if reason:
             log.info("stopping: %s", reason)
+        if self.modules.get("priority") is not None:
+            self.modules["priority"].stop_priorities()  # nothing stays demoted without us
         self.loop.quit()
         return GLib.SOURCE_REMOVE
 
@@ -219,6 +245,7 @@ class Daemon:
             override = None
         before = self.resolved.theme if self.resolved else None
         self.resolved = appearance.resolve(values, themes.load_all(self.store.dir), now, override)
+        self.resolved = appearance.shaped(self.resolved, values["appearance"].get("ui_style", "rounded"))
         if self.resolved.missing:
             log.warning("theme %r not found, using %s", self.resolved.missing, self.resolved.theme.name)
         return before != self.resolved.theme
@@ -352,6 +379,19 @@ class Daemon:
         self.applied = values
         self.write_startup(values)
 
+    def _name_profiles(self) -> None:
+        """Each profile choice of the Desktop page (window style, shadows, animation feel,
+        responsiveness) names what its settings now amount to - one of its profiles, or custom - however
+        they were changed: by that choice, by an interface style, or by hand."""
+        from . import presets
+        values = self.store.effective()
+        for path in presets.PROFILES:
+            section, name = path.split(".", 1)
+            wanted = presets.profile_matching(path, values)
+            if values[section][name] != wanted:
+                self.store.set(section, name, wanted)
+                values = self.store.effective()
+
     def _apply_changes(self) -> dict[str, set[str]]:
         """Apply whatever differs from what was last applied, plus the sections
         that depend on it (or on the active theme, if that changed)."""
@@ -361,7 +401,7 @@ class Daemon:
         if self._resolve_theme(values):
             triggers.add("theme")
             log.info("active theme is now %s (%s)", self.resolved.theme.name, self.resolved.source)
-        if "style" in changes.get("appearance", ()):
+        if {"style", "ui_style", "frame_color", "quick_surface"} & set(changes.get("appearance", ())):
             triggers.add("theme")  # everything themed is also styled
         for section in values:  # schema order: e.g. appearance before background
             if section in changes:
@@ -382,9 +422,19 @@ class Daemon:
         self._apply_changes()
         return GLib.SOURCE_CONTINUE
 
+    def _priority_tick(self) -> bool:
+        module = self.modules.get("priority")
+        values = self.applied.get("priority")
+        if module is not None and values:
+            module.tick(self.ipc, values)
+        return GLib.SOURCE_CONTINUE
+
     def _stop_components(self) -> None:
         """Programs we run need the Wayland session; stop them before it goes
         so systemd doesn't keep restarting them."""
+        priority = self.modules.get("priority")
+        if priority is not None:
+            priority.stop_priorities()
         values = self.store.effective()
         ctx = self._ctx(values=values)
         for section, module in self.modules.items():
@@ -457,6 +507,7 @@ class Daemon:
                          "timezone": schedule.local_timezone_name()},
             "night_light": NightLightModule().status(),
             "scrolling": self.modules["scrolling"].status(),
+            "priority": self.modules["priority"].status(),
             "keyremap": self.modules["keyremap"].status(),
             "auth": self.modules["auth"].status(values["auth"]),
             "components": {s: m.status(values[s], self._ctx(values=values))
@@ -521,11 +572,15 @@ class Daemon:
             self._stop_components()
             self._quit("sway is shutting down")
             return GLib.SOURCE_REMOVE
+        if name in ("workspace", "window"):
+            self._record_workspaces()
         if name == "workspace" and (payload or {}).get("change") == "reload":
             # `swaymsg reload` re-applied the user's config on top of ours.
             log.info("sway reloaded its config, re-applying settings")
             self.apply_all()
         elif name == "window":
+            if hasattr(self.modules.get("priority"), "window_event"):
+                self.modules["priority"].window_event(payload)
             # a glass app's window opened: hand it its rule directly
             effects = self.modules.get("effects")
             cmds = effects.window_opened(payload) if hasattr(effects, "window_opened") else []
@@ -538,10 +593,48 @@ class Daemon:
             self._outputs_id = GLib.timeout_add(OUTPUT_SETTLE_MS, self._sync_outputs)
         return GLib.SOURCE_CONTINUE
 
+    def _record_workspaces(self, force: bool = False) -> None:
+        """Remember where workspaces are. While the set of outputs differs from
+        the last record, a hotplug is under way and sway has already moved
+        things, so nothing is recorded until `_sync_outputs` settles."""
+        try:
+            ws, outs = self.ipc.get_workspaces(), wsguard.active_outputs(self.ipc.get_outputs())
+        except (swayipc.IPCError, OSError):
+            return
+        if force or not self._ws_history or self._ws_history[-1][1] == outs:
+            self._ws_history.append((time.monotonic(), outs, ws))
+
+    def _keep_workspaces(self) -> None:
+        """A monitor was plugged in: put workspaces sway sent onto it back."""
+        if not self._ws_history:
+            return
+        _, before_outs, before_ws = self._ws_history[-1]
+        try:
+            now_ws = self.ipc.get_workspaces()
+            now_outs = wsguard.active_outputs(self.ipc.get_outputs())
+        except (swayipc.IPCError, OSError):
+            return
+        cmds = wsguard.plan(before_ws, before_outs, now_ws, now_outs)
+        if cmds:
+            log.info("monitor plugged in: keeping workspaces where they were (%d commands)", len(cmds))
+            for e in self._run(cmds):
+                log.warning("%s", e)
+        if cmds:
+            # the main display gets the focus back, like before the plug
+            from .modules.outputs import main_output
+            try:
+                main = main_output(self.ipc.get_outputs(), self.store.effective()["outputs"].get("primary", ""))
+            except (swayipc.IPCError, OSError):
+                main = ""
+            if main:
+                self._run([f'focus output "{main}"'])
+        self._record_workspaces(force=True)
+
     def _sync_outputs(self) -> bool:
         """Remember newly connected monitors (as they are now), so they show up
         in the UI and keep their setup; known ones are re-checked."""
         self._outputs_id = 0
+        self._keep_workspaces()
         module = self.modules["outputs"]
         try:
             live = module.snapshot(self.ipc)
@@ -617,6 +710,18 @@ class Daemon:
                 except (OSError, ValueError) as e:
                     raise ValueError(f"{section}.{name}: can't read {value}: {e}") from None
             self.store.set(section, name, value)
+            if (section, name) == ("scrolling", "profile"):
+                from . import presets
+                self.store.set_many(presets.scroll_values(value))
+            if (section, name) == ("appearance", "ui_style"):
+                # one choice for the whole interface: the bar, windows and gaps follow
+                from . import presets
+                self.store.set_many(presets.ui_style_values(value))
+            from . import presets
+            if f"{section}.{name}" in presets.PROFILES:
+                # a profile of the Desktop page: it is a handful of plain settings
+                self.store.set_many(presets.profile_values(f"{section}.{name}", value))
+            self._name_profiles()
             if related:
                 self.store.set_many({section: related})
             self._apply_changes()
@@ -624,6 +729,7 @@ class Daemon:
         if method == "Reset":
             section, name = schema.split_path(args[0])
             self.store.reset(section, name)
+            self._name_profiles()
             self._apply_changes()
             return None
         if method == "ApplyAll":
@@ -639,6 +745,7 @@ class Daemon:
         if method == "Import":
             summary = backup.restore(self.store, Path(args[0]).expanduser())
             self.store.load()
+            self._name_profiles()
             self._apply_changes()
             log.info("imported backup %s: %s", args[0], summary)
             return json.dumps(summary)

@@ -11,6 +11,27 @@ VI = {
     "Connections": "Kết nối", "Devices": "Thiết bị", "Personalize": "Cá nhân hoá", "System": "Hệ thống",
     "Wi-Fi & Network": "Wi-Fi & mạng", "Bluetooth": "Bluetooth", "Displays": "Màn hình", "Sound": "Âm thanh",
     "Keyboard": "Bàn phím", "Mouse & Touchpad": "Chuột & bàn di", "Power & Lock": "Nguồn & khoá",
+    "Interface style": "Kiểu giao diện",
+    "Very slow": "Rất chậm",
+    "How far Page Up and Page Down go": "Page Up và Page Down đi bao xa",
+    "A quarter of the screen": "Một phần tư màn hình", "Half the screen": "Nửa màn hình",
+    "Most of the screen": "Gần hết màn hình",
+    "Smooth Page Up and Page Down": "Page Up và Page Down mượt",
+    "In browsers and document viewers the page glides when you press Page Up or Page Down, instead of jumping.":
+        "Trong trình duyệt và trình xem tài liệu, trang trượt êm khi bấm Page Up hoặc Page Down thay vì nhảy.",
+    "Scroll speed in Chrome and Electron apps": "Tốc độ cuộn trong Chrome và app Electron",
+    "Chrome, Edge, Brave, VS Code and Discord scroll further per step than other apps; this evens it out.":
+        "Chrome, Edge, Brave, VS Code và Discord cuộn xa hơn mỗi bước so với app khác; mục này cân bằng lại.",
+    "Same as others": "Như app khác", "Slower": "Chậm hơn", "Much slower": "Chậm hơn nhiều",
+    "Slowest": "Chậm nhất", "Crawl": "Rất chậm",
+    "How the touchpad and the mouse wheel scroll: off, or a glide that carries on a little, some or a lot after you stop.":
+        "Cách touchpad và con lăn chuột cuộn: tắt, hoặc trượt tiếp một chút, vừa, hay nhiều sau khi bạn dừng.",
+    "Light glide": "Trượt ngắn", "Long glide": "Trượt dài",
+    "One look for the bar, Quick Settings, OSD, notifications, launcher and windows: square and attached, rounded with gaps, liquid glass popups, or Modern Minimal cards.":
+        "Một giao diện chung cho thanh bar, Cài đặt nhanh, OSD, thông báo, launcher và cửa sổ: vuông sát màn hình, bo cong có khoảng hở, popup kính lỏng, hoặc thẻ Modern Minimal.",
+    "Square (attached to the screen, no gaps)": "Vuông (sát màn hình, không khoảng hở)", "Square": "Vuông",
+    "Rounded with gaps, no glass": "Bo cong, có khoảng hở, không kính",
+    "Liquid glass popups (rounded, with gaps)": "Popup kính lỏng (bo cong, có khoảng hở)",
     "Appearance": "Giao diện", "Desktop": "Màn hình nền", "Notifications": "Thông báo", "Search": "Tìm kiếm",
     "Bar": "Thanh trạng thái", "Clipboard": "Bộ nhớ tạm", "Effects": "Hiệu ứng", "Fonts": "Phông chữ",
     "Launcher": "Trình khởi chạy", "Location": "Vị trí", "Lock & Idle": "Khoá & chờ", "Night Light": "Ánh sáng đêm",
@@ -37,7 +58,7 @@ VI = {
     "Find new files right away": "Tìm thấy tệp mới ngay", "First notch strength": "Độ mạnh nấc đầu",
     "Floating window border": "Viền cửa sổ nổi", "Focus follows mouse": "Chọn cửa sổ theo chuột", "Glide": "Trôi",
     "Glide starts after (ms)": "Bắt đầu trôi sau (ms)", "Group notifications by app": "Nhóm thông báo theo ứng dụng",
-    "Height (0 = fit contents)": "Chiều cao (0 = vừa nội dung)", "Hide after (seconds)": "Ẩn sau (giây)",
+    "Height (0 = fit contents)": "Chiều cao (0 = vừa nội dung)", "Bar size": "Cỡ thanh bar", "How tall the bar is.": "Thanh bar cao bao nhiêu.", "Hide after (seconds)": "Ẩn sau (giây)",
     "Hide critical after (seconds, 0 = never)": "Ẩn thông báo khẩn sau (giây, 0 = không bao giờ)",
     "Hide edge borders": "Ẩn viền ở mép", "Hide low-priority after (seconds)": "Ẩn thông báo ưu tiên thấp sau (giây)",
     "History size": "Số mục lịch sử", "Horizontal position": "Vị trí ngang",
@@ -68,6 +89,36 @@ VI = {
     "Run fcitx5 (Vietnamese, Chinese, Japanese… input)": "Chạy fcitx5 (gõ tiếng Việt, Trung, Nhật…)",
     "Scroll speed": "Tốc độ cuộn", "Scroll with": "Cuộn bằng", "Search engine": "Công cụ tìm kiếm", "Search in": "Tìm trong",
     "Settings and quick actions": "Cài đặt và thao tác nhanh", "Shadow softness": "Độ mềm của bóng",
+    "Animation feel": "Cảm giác chuyển động",
+    "Window style": "Kiểu cửa sổ", "Shadows": "Đổ bóng", "Keep the desktop responsive": "Giữ máy luôn mượt",
+    "How windows sit: Compact tiles them edge to edge with square corners; Balanced and Spacious leave gaps and round the corners.": "Cách cửa sổ sắp xếp: Gọn xếp sát nhau và vuông góc; Cân bằng và Rộng rãi chừa khe hở và bo góc.",
+    "The shadow under windows: none, a soft one, or a deep one.": "Bóng dưới cửa sổ: không có, nhẹ hoặc đậm.",
+    "How much of the computer builds and indexers may use, so the desktop never stutters: Maximum keeps the most free.": "Build và trình lập chỉ mục được dùng bao nhiêu máy, để giao diện không bao giờ giật: Tối đa chừa nhiều nhất.",
+    "More window options": "Thêm tùy chọn cửa sổ", "More effect options": "Thêm tùy chọn hiệu ứng",
+    "More bar options": "Thêm tùy chọn thanh bar", "More performance options": "Thêm tùy chọn hiệu năng",
+    "Rules for individual programs": "Quy tắc cho từng chương trình",
+    "Compact": "Gọn", "Balanced": "Cân bằng", "Spacious": "Rộng rãi", "Soft": "Nhẹ", "Deep": "Đậm", "Maximum": "Tối đa", "Normal": "Bình thường", "Large": "Lớn",
+    "How windows, popups and workspaces move. Pick one; the options below tune it and make it Custom.": "Cách cửa sổ, popup và workspace chuyển động. Chọn một kiểu; các tùy chọn bên dưới chỉnh thêm và chuyển nó thành Tùy chỉnh.",
+    "More animation options": "Thêm tùy chọn chuyển động", "More shadow options": "Thêm tùy chọn bóng",
+    "Playful": "Vui nhộn", "Quick": "Nhanh", "Custom": "Tùy chỉnh",
+    "Clear": "Trong suốt", "Frosted": "Mờ sương", "Prism": "Lăng kính", "Bold": "Đậm nét",
+    "The look of the liquid glass on popups: Subtle, Clear, Frosted, Prism (rainbow rim) or Bold (deep lens). The options below tune it and make it Custom.": "Kiểu kính lỏng trên các popup: Rất nhẹ, Trong suốt, Mờ sương, Lăng kính (viền cầu vồng) hoặc Đậm nét (thấu kính sâu). Các tùy chọn bên dưới tinh chỉnh và chuyển sang Tùy chỉnh.",
+    "Closing takes (% of opening)": "Đóng mất (% thời gian mở)", "Bounce when closing (%)": "Độ nảy khi đóng (%)",
+    "Windows open from (% of their size)": "Cửa sổ mở từ (% kích thước)", "Fade ahead of the motion (%)": "Mờ nhanh hơn chuyển động (%)",
+    "An exit is quicker than an entrance: closing, and leaving a workspace, take this share of the opening time (100 = as long).": "Thoát nhanh hơn vào: đóng cửa sổ và rời workspace mất bằng chừng này phần thời gian mở (100 = bằng nhau).",
+    "How much a spring bounces when something closes (it does not on a Mac).": "Lò xo nảy bao nhiêu khi đóng (trên Mac thì không nảy).",
+    "A window opens from, and closes to, this share of its own size: 94 is a small step in, 80 a big pop.": "Cửa sổ mở từ và đóng về chừng này phần kích thước của nó: 94 là bước nhỏ, 80 là bật mạnh.",
+    "Opacity moves this much faster than the size: above 100 it is already there before the motion ends.": "Độ mờ đổi nhanh hơn kích thước chừng này: trên 100 thì nó đã xong trước khi chuyển động kết thúc.",
+    "Fast exit": "Thoát nhanh", "Quicker": "Nhanh hơn", "Same": "Như nhau", "Big pop": "Bật mạnh", "Gentle": "Nhẹ",
+    "Subtle": "Rất nhẹ", "Almost none": "Gần như không", "With the motion": "Cùng chuyển động", "Ahead": "Nhanh hơn", "Well ahead": "Nhanh hơn nhiều",
+    "Bouncy": "Nảy",
+    "Shadow shift sideways": "Lệch bóng ngang", "Shadow drop": "Độ rơi của bóng", "Shadow of unfocused windows": "Bóng của cửa sổ không focus",
+    "Shadow on windows that draw their own": "Bóng cho cửa sổ tự vẽ khung",
+    "Moves the shadow left (negative) or right.": "Dịch bóng sang trái (số âm) hoặc phải.",
+    "How far the shadow drops below the window; negative lifts it above.": "Bóng rơi xuống dưới cửa sổ bao xa; số âm đưa lên trên.",
+    "How strong the shadow of a window you are not using is, as a share of the focused one's (100 = the same).": "Độ đậm bóng của cửa sổ bạn không dùng, tính theo phần trăm của cửa sổ đang focus (100 = như nhau).",
+    "Also put a shadow under windows that draw their own frame and shadow (GTK apps without server decorations), which then get two.": "Thêm bóng cho cả cửa sổ tự vẽ khung và bóng (ứng dụng GTK không dùng khung của compositor); khi đó chúng có hai bóng.",
+    "Slight": "Nhẹ", "Deep": "Sâu", "Faint": "Mờ", "Half": "Một nửa", "Same": "Như nhau",
     "Show app actions (e.g. New private window)": "Hiện thao tác của ứng dụng (ví dụ Cửa sổ riêng tư mới)",
     "Show failed attempts": "Hiện số lần nhập sai", "Show files without typing /": "Hiện tệp mà không cần gõ /",
     "Show images": "Hiện hình ảnh", "Show on monitor": "Hiện trên màn hình", "Skip": "Bỏ qua", "Smart gaps": "Khoảng cách thông minh",
@@ -90,9 +141,36 @@ VI = {
     "Room around what's inside each pill of the bar: less fits more, more feels airier.":
         "Khoảng trống quanh nội dung trong mỗi viên của bar: ít thì gọn, nhiều thì thoáng.",
     "Apps pop in when they open and shrink away when they close.": "App phóng ra khi mở và thu nhỏ biến mất khi đóng.",
-    "Workspaces fade into each other when you switch.": "Các workspace mờ dần sang nhau khi chuyển.",
+    "Switching workspaces is animated: a fade, or a slide when that option below is on.": "Chuyển workspace có chuyển động: mờ dần, hoặc trượt khi bật tuỳ chọn bên dưới.",
     "Windows glide to their new place and size.": "Cửa sổ trượt mượt tới vị trí và kích thước mới.",
     "How long each animation takes; shorter feels snappier.": "Mỗi hiệu ứng kéo dài bao lâu; ngắn hơn thì nhanh gọn hơn.",
+    "Frame color": "Màu khung", "Popup surface": "Bề mặt cửa sổ nổi", "Gaps": "Khoảng cách", "Normal": "Bình thường",
+    "The solid colour of the bar and of the space around and between the windows (frame style).":
+        "Màu đặc của bar và của khoảng trống quanh và giữa các cửa sổ (kiểu khung).",
+    "Auto follows the interface style; flat draws Quick Settings, the volume pill and the launcher as plain blocks without glass or blur.":
+        "Tự động theo kiểu giao diện; phẳng vẽ Quick Settings, thanh âm lượng và launcher thành các khối đơn giản, không kính, không blur.",
+    "Modern Minimal (soft cards, hairlines, one dark accent)": "Modern Minimal (thẻ mềm, đường kẻ mảnh, một màu nhấn tối)",
+    "Frame (solid bar and background around the windows)": "Khung (bar và nền đặc quanh các cửa sổ)",
+    "Follow the interface style": "Theo kiểu giao diện", "Flat (no glass, no blur)": "Phẳng (không kính, không blur)",
+    "Workspaces slide": "Workspace trượt ngang",
+    "Switching workspaces slides them sideways, in order, instead of fading.":
+        "Chuyển workspace thì chúng trượt ngang theo thứ tự thay vì mờ dần.",
+    "Popups opening and closing": "Popup mở và đóng", "Animation style": "Kiểu chuyển động",
+    "Animations": "Hiệu ứng chuyển động",
+    "Quick Settings, the launcher and the volume pill open and close with the same animation as windows (the style below); the compositor does it.":
+        "Quick Settings, launcher và thanh âm lượng mở/đóng cùng kiểu chuyển động với cửa sổ (kiểu ở dưới); do compositor thực hiện.",
+    "Shadows": "Đổ bóng", "Tight": "Gọn", "Soft": "Mềm", "Very soft": "Rất mềm",
+    "Frame surface": "Bề mặt khung", "Solid colour": "Màu đặc", "Liquid glass": "Kính lỏng",
+    "Solid is one colour; glass is one pane of liquid glass over the wallpaper, bending it along the windows' edges.":
+        "Màu đặc là một màu; kính là một tấm kính lỏng phủ lên hình nền, bẻ cong nó dọc theo cạnh các cửa sổ.",
+    "Icon style": "Kiểu biểu tượng", "iPadOS": "iPadOS", "System theme": "Theo giao diện hệ thống",
+    "Wi-Fi, sound, battery, Bluetooth and brightness: drawn in the iPadOS manner, or from the icon theme.":
+        "Wi-Fi, âm thanh, pin, Bluetooth và độ sáng: vẽ theo kiểu iPadOS, hoặc lấy từ bộ biểu tượng của hệ thống.",
+    "Animation curve": "Kiểu chuyển động", "Spring pace (ms)": "Nhịp lò xo (ms)", "Spring bounce (%)": "Độ nảy lò xo (%)",
+    "Spring keeps its speed when a window is moved again mid-way; ease restarts every time.":
+        "Lò xo giữ nguyên đà khi cửa sổ bị đổi chỗ giữa chừng; ease thì bắt đầu lại mỗi lần.",
+    "How quickly the spring settles; lower is snappier.": "Lò xo ổn định nhanh cỡ nào; thấp hơn thì nhanh gọn hơn.",
+    "How far windows overshoot before settling; 0 is none.": "Cửa sổ vượt quá đích bao xa trước khi dừng; 0 là không nảy.",
     "Window border": "Viền cửa sổ", "Window border style": "Kiểu viền cửa sổ", "Window shadows": "Bóng cửa sổ",
     "Fingerprint: unlock the screen": "Vân tay: mở khoá màn hình", "Fingerprint: sudo": "Vân tay: sudo",
     "Fingerprint: admin prompts": "Vân tay: hộp thoại quản trị", "Fingerprint: log in": "Vân tay: đăng nhập",
@@ -102,12 +180,20 @@ VI = {
     "Your password always keeps working: the fingerprint is only tried before it.":
         "Mật khẩu luôn dùng được: vân tay chỉ được thử trước nó.",
     "Fingerprint: ": "Vân tay: ",
+    "Face: unlock the screen": "Khuôn mặt: mở khoá màn hình", "Face: sudo": "Khuôn mặt: sudo",
+    "Face: admin prompts": "Khuôn mặt: hộp thoại quản trị", "Face: ": "Khuôn mặt: ",
+    "infrared camera found": "có camera hồng ngoại", "no infrared camera found": "không thấy camera hồng ngoại",
+    " (Howdy not installed)": " (chưa cài Howdy)", "Install Howdy…": "Cài Howdy…",
+    "Add a face…": "Thêm khuôn mặt…",
+    "Your password always keeps working: the fingerprint and the face are only tried before it. Face unlock uses an infrared camera; a photo can't fool it, but treat it as a convenience, not a lock for sensitive things.":
+        "Mật khẩu của bạn luôn dùng được: vân tay và khuôn mặt chỉ được thử trước. Mở khoá bằng khuôn mặt dùng camera hồng ngoại nên ảnh chụp không đánh lừa được, nhưng chỉ nên coi là tiện lợi, không phải khoá cho việc nhạy cảm.",
+    "Howdy now uses the infrared camera": "Howdy đã dùng camera hồng ngoại", "Point Howdy at the camera…": "Chọn camera cho Howdy…",
     "reader found": "có cảm biến", "no reader found": "không thấy cảm biến", " (fprintd not installed)": " (chưa cài fprintd)",
     "Changes not applied yet: press Apply (asks for your password).": "Thay đổi chưa được áp dụng: bấm Áp dụng (sẽ hỏi mật khẩu).",
     "Unlock settings applied": "Đã áp dụng cài đặt mở khoá", "Unlock changes undone": "Đã hoàn tác thay đổi mở khoá",
     "swaylock (password only)": "swaylock (chỉ mật khẩu)",
     "swayctl-lock (password and fingerprint at once)": "swayctl-lock (mật khẩu và vân tay cùng lúc)",
-    "Liquid glass bar, popups and this app": "Thanh, popup và ứng dụng này kiểu kính lỏng",
+    "Liquid glass popups": "Popup kiểu kính lỏng",
     "Notification program": "Chương trình thông báo",
     "Terminals, GTK 3 and Qt apps follow light/dark": "Terminal, app GTK 3 và Qt đổi theo sáng/tối",
     "foot, kitty and alacritty colors, the GTK 3 theme (browsers and Electron go by it) and Qt apps switch with the desktop.":
@@ -134,7 +220,7 @@ VI = {
     'How far each blur pass reaches.': 'Mỗi lần làm mờ lan rộng bao xa.',
     "Darken windows you aren't using (0 = off, 1 = black).": 'Làm tối cửa sổ không dùng (0 = tắt, 1 = đen hẳn).',
     'Blur and shadow behind the bar, notifications and launcher.': 'Làm mờ và đổ bóng sau thanh, thông báo và trình khởi chạy.',
-    "The bar, Quick Settings, notifications, launcher and this window become liquid glass: what's behind bends at the edges.": 'Thanh, Cài đặt nhanh, thông báo, launcher và cửa sổ này thành kính lỏng: hình phía sau bị bẻ cong.',
+    "Quick Settings, the volume pill, the launcher and notifications become liquid glass: what's behind bends at the edges. The bar and the apps stay plain.": 'Cài đặt nhanh, thanh âm lượng, launcher và thông báo thành kính lỏng: hình phía sau bị bẻ cong ở mép. Thanh bar và các ứng dụng giữ nguyên dạng thường.',
     "How hard the bezel bends what's behind it, in pixels (demo Refraction Scale). The flat centre stays clear; only the rim pulls and magnifies.": 'Mép kính bẻ cong hình phía sau mạnh đến đâu, tính theo pixel (demo Refraction Scale). Phần giữa kính trong; chỉ mép mới bẻ và phóng đại.',
     "How much of the theme's color tints the glass (0 = clear; dark mode is always smoked glass). When glass is on, the shell's milk fill is thinned so the bend shows through.": 'Lớp màu chủ đề phủ lên kính dày bao nhiêu (0 = trong; chế độ tối luôn là kính khói). Khi kính bật, lớp sữa của shell mỏng đi để lộ độ bẻ cong.',
     "How frosted the glass is (0 = crystal clear, 100 = frosted). The demo precision lens is clear (default 0).": 'Kính mờ đến đâu (0 = trong vắt, 100 = kính mờ). Thấu kính demo Precision trong (mặc định 0).',
@@ -178,6 +264,9 @@ VI = {
     "Clock tooltip format": "Định dạng đồng hồ khi rê chuột",
     "What each side of the bar shows, in order.": "Những gì mỗi bên thanh hiển thị, theo thứ tự.",
     "Shown when the pointer rests on the clock.": "Hiện khi để con trỏ trên đồng hồ.",
+    "Main display": "Màn hình chính",
+    "Reset all displays…": "Đặt lại tất cả màn hình…",
+    "Forget every saved display setup and start again from the monitors connected now.": "Xóa mọi cấu hình màn hình đã lưu và thiết lập lại từ các màn hình đang cắm.",
     "Add a module…": "Thêm mục…", "Modules": "Các mục", "Advanced": "Nâng cao",
     "Same as the desktop": "Giống màn hình nền", "Theme color": "Màu chủ đề", "Workspaces": "Workspace", "Sway mode (resize…)": "Chế độ Sway (đổi kích thước…)",
     "Window title": "Tiêu đề cửa sổ", "Clock": "Đồng hồ", "Tray (app icons)": "Khay hệ thống (icon app)",
@@ -199,6 +288,68 @@ VI = {
     "With title bar": "Có thanh tiêu đề", "Yes": "Có", "swayctl-bar (with Quick Settings)": "swayctl-bar (có Cài đặt nhanh)",
     "Light": "Sáng", "Dark": "Tối", "Auto": "Tự động", "Top": "Trên", "Bottom": "Dưới",
 }
+
+
+VI.update({
+    # priority: keeping the desktop responsive under load
+    "Performance": "Hiệu năng",
+    "Keep the desktop responsive under load": "Giữ máy mượt khi tải nặng",
+    "Builds, language servers and indexers run behind the program you are using, so the desktop never stutters.":
+        "Build, language server và trình lập chỉ mục chạy sau app bạn đang dùng, nên giao diện không bao giờ bị giật.",
+    "Favor the app you are using": "Ưu tiên app đang dùng",
+    "Favor every app that draws on screen": "Ưu tiên mọi app có cửa sổ",
+    "Any program with a window (it has the graphics card open) is favored on its own, so new apps need no rule. Rules still win; builds and language servers never count.":
+        "Mọi chương trình có cửa sổ (đang mở card đồ họa) tự được ưu tiên, app mới không cần thêm rule. Rule vẫn được ưu tiên hơn; build và language server không bao giờ tính.",
+    "The window you are looking at gets the processor first.": "Cửa sổ bạn đang nhìn được cấp CPU trước.",
+    "Priority of the app you are using": "Mức ưu tiên của app đang dùng",
+    "How strongly the focused app is favored (-11 is the most, 0 is none).":
+        "Mức ưu tiên cho app đang focus (-11 là cao nhất, 0 là không ưu tiên).",
+    "Priority of background work": "Mức ưu tiên của việc chạy nền",
+    "How far language servers and indexers step back (19 is the most).":
+        "Language server và trình lập chỉ mục lùi xa tới đâu (19 là lùi nhiều nhất).",
+    "Keep the screen compositor ahead of everything": "Giữ compositor vẽ màn hình ưu tiên trước mọi thứ",
+    "The program that draws the screen runs ahead of every normal program, so a busy computer never delays a frame.":
+        "Chương trình vẽ màn hình chạy trước mọi chương trình thường, nên máy bận cũng không bao giờ trễ khung hình.",
+    "Slow background work further when the computer struggles": "Giảm thêm việc chạy nền khi máy quá tải",
+    "When the processor is saturated or the disk is the bottleneck, background work steps back as far as builds do.":
+        "Khi CPU kín hoặc đĩa nghẽn, việc chạy nền lùi xa như build.",
+    "Processor busy limit (%)": "Ngưỡng CPU bận (%)",
+    "Share of time something waits for a processor core that counts as struggling.":
+        "Tỷ lệ thời gian có tiến trình phải chờ lõi CPU thì coi là máy quá tải.",
+    "Disk waiting limit (%)": "Ngưỡng chờ đĩa (%)",
+    "Share of time everything waits for the disk that counts as struggling.":
+        "Tỷ lệ thời gian mọi tiến trình cùng chờ đĩa thì coi là máy quá tải.",
+    "Check every (seconds)": "Kiểm tra mỗi (giây)",
+    "How often new programs are looked at.": "Bao lâu xem xét các chương trình mới một lần.",
+    "Priority rules": "Quy tắc ưu tiên",
+    "Never change these programs": "Không bao giờ đụng tới các chương trình này",
+    "Programs left exactly as they are: no rule and no favoring changes them. They draw the screen, take input and play sound, so touching them could only make the desktop worse (names must match exactly).":
+        "Các chương trình được giữ nguyên hoàn toàn: không quy tắc hay mức ưu tiên nào đụng tới. Chúng vẽ màn hình, nhận phím và phát âm thanh nên đụng vào chỉ làm máy tệ hơn (tên phải khớp chính xác).",
+    "Program name or pattern, e.g. cargo": "Tên chương trình hoặc mẫu, ví dụ cargo",
+    "Program name": "Tên chương trình", "Command line": "Dòng lệnh",
+    "Background work: processor ceiling (%)": "Việc chạy nền: trần CPU (%)",
+    "All waiting work (builds, language servers, indexers) together may use at most this share of the processor; the rest is always free for the interface. 75 % costs a build little (a 16-thread processor has 8 real cores) and keeps 4 threads free. 100 = no ceiling.":
+        "Toàn bộ việc đang chờ (build, language server, indexer) cộng lại chỉ được dùng tối đa phần CPU này; phần còn lại luôn dành cho giao diện. 75 % gần như không làm build chậm (CPU 16 luồng chỉ có 8 lõi thật) mà vẫn chừa 4 luồng. 100 = không giới hạn.",
+    "Background work on battery: processor ceiling (%)": "Việc chạy nền khi dùng pin: trần CPU (%)",
+    "The same ceiling while on battery: less heat, longer charge.": "Trần tương tự khi chạy pin: ít nóng hơn, pin lâu hơn.",
+    "Hold back background programs when the graphics card is saturated": "Kìm chương trình nền khi card đồ họa quá tải",
+    "The graphics card cannot be split by program, so this holds back what you are not looking at once it is saturated: those programs get the processor last, which slows how fast they feed it.":
+        "Card đồ họa không chia theo từng chương trình được, nên khi quá tải mục này kìm những chương trình bạn không nhìn: chúng được cấp CPU sau cùng, nên gửi việc cho GPU chậm lại.",
+    "Graphics card busy limit (%)": "Ngưỡng card đồ họa bận (%)",
+    "Held back while the graphics card is busier than this (it lets go at three quarters of it). 80 keeps a fifth of the card for animations.":
+        "Bị kìm khi card đồ họa bận hơn mức này (thả ra khi xuống còn ba phần tư). 80 chừa một phần năm card cho animation.",
+    "GPU": "GPU", "held back": "bị kìm", "capped": "có trần CPU",
+    "Interface (highest)": "Giao diện (cao nhất)",
+    "Priority of the interface (bar, launcher, notifications)": "Mức ưu tiên của giao diện (thanh, launcher, thông báo)",
+    "The bar, Quick Settings, launcher and notifications run ahead of everything - even programs a favored app has just started (-11 is the most).":
+        "Thanh, Quick Settings, launcher và thông báo chạy trước mọi thứ, kể cả chương trình mà app đang ưu tiên vừa khởi chạy (-11 là cao nhất).",
+    "Favored": "Ưu tiên", "Background": "Chạy nền", "Heavy (lowest)": "Nặng (thấp nhất)",
+    "Rules: the first one that matches decides. Programs started by a matched program follow it.":
+        "Quy tắc: cái khớp đầu tiên quyết định. Chương trình do một chương trình đã khớp khởi chạy sẽ theo nó.",
+    "Managing": "Đang quản lý", "programs": "chương trình", "Processor": "CPU", "Disk": "Đĩa",
+    "Struggling: background work is held back": "Máy quá tải: đang kìm việc chạy nền",
+    "Not running": "Chưa chạy",
+})
 
 LANGS = {"vi": VI}
 

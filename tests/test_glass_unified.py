@@ -1,6 +1,6 @@
 import unittest
 
-from swayctl_center.modules.components import adaptive_css, app_glass_css, shell_milk
+from swayctl_center.modules.components import adaptive_css, shell_milk
 
 
 class GlassUnifiedTest(unittest.TestCase):
@@ -16,84 +16,21 @@ class GlassUnifiedTest(unittest.TestCase):
         self.assertEqual(shell_milk(50, False), 0.50)
         self.assertEqual(shell_milk(0, False), 0.04)
 
-    def test_app_glass_css_adaptive_is_on(self):
+    def test_the_settings_window_is_never_glass(self):
+        # liquid glass is for the popups (Quick Settings, the volume pill, the launcher, notifications):
+        # not an app window, whatever the setting and whatever the compositor can do
         from swayctl_center.ui import SettingsWindow
-        w = SettingsWindow.__new__(SettingsWindow)
-
-        class Client:
-            def get_all(self):
-                return {"effects": {"glass": True, "glass_opacity": 10},
-                        "background": {"image": "", "mode": "fill", "color": "#101014"}}
-
-        w.client = Client()
-        theme = {"tokens": {"accent": "#3584e4", "accent_fg": "#ffffff"}, "bg": "#101014"}
-        css = w._glass_css(theme, {"compositor": {"features": ["glass-windows"]}})
-        # chữ đổi theo nền + độ dày envelope như bar/Quick Settings
-        self.assertIn(".on-dark", css)
-        self.assertIn(".on-light", css)
-        self.assertIn("tint-", css)
-        # độ đục sữa = shell_milk (x0.20 khi kính bật), không còn x0.55 riêng
-        want = app_glass_css(theme["tokens"], shell_milk(10, True))
-        self.assertIn(want, css)
-
-    def test_app_glass_css_key_ink(self):
-        # compositor có glass-ink: chữ vẽ bằng màu khóa, không hỏi ảnh nền
-        from swayctl_center.modules.components import INK_KEY
-        from swayctl_center.ui import SettingsWindow
-        w = SettingsWindow.__new__(SettingsWindow)
 
         class Client:
             def get_all(self):
                 return {"effects": {"glass": True, "glass_opacity": 10},
                         "background": {"image": "x.png", "mode": "fill"}}
 
-        w.client = Client()
-        theme = {"tokens": {"accent": "#3584e4", "accent_fg": "#ffffff"}, "bg": "#101014"}
-        css = w._glass_css(theme, {"compositor": {"features": ["glass-windows", "glass-ink"]}})
-        self.assertTrue(w._ink)
-        self.assertIsNone(w._backdrop)
-        self.assertIn(f"window.ink-key label", css)
-        self.assertIn(INK_KEY, css)
-        self.assertNotIn(".on-dark.on-dark", css)
-
-    def test_app_glass_css_off_without_compositor_glass(self):
-        from swayctl_center.ui import SettingsWindow
-        w = SettingsWindow.__new__(SettingsWindow)
-
-        class Client:
-            def get_all(self):
-                return {"effects": {"glass": False, "glass_opacity": 10}}
-
-        w.client = Client()
-        self.assertEqual(
-            w._glass_css({"tokens": {}, "bg": "#000000"},
-                         {"compositor": {"features": ["glass-windows"]}}), "")
-        self.assertIsNone(w._backdrop)
-        # thiếu feature glass-windows: không có kính, tắt cả retag
-        self.assertEqual(
-            w._glass_css({"tokens": {}, "bg": "#000000"},
-                         {"compositor": {"features": []}}), "")
-        self.assertIsNone(w._backdrop)
-
-    def test_adaptive_css_covers_shell_selectors(self):
-        css = adaptive_css(10, "#3584e4", "#ffffff")
-        self.assertIn(".on-dark label", css)
-        self.assertIn(".on-dark button", css)
-        self.assertIn(".on-light label", css)
-
-
-    def test_lens_ink_follows_liquid_demo(self):
-        css = adaptive_css(10, "#3584e4", "#ffffff", lens=True)
-        # pure white / near-black ink, halo steps, smooth switch
-        self.assertIn("color: #ffffff", css)
-        self.assertIn("color: #111114", css)
-        for step in range(5):
-            self.assertIn(f".on-dark.halo-{step} label", css)
-        self.assertIn("transition: color", css)
-        # clear capsules: no smoke/milk thickening while the lens is on
-        self.assertNotIn("tint-", css)
-        self.assertNotIn("linear-gradient", css)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        for features in (["glass-windows", "glass-ink"], ["glass-windows"], []):
+            w = SettingsWindow.__new__(SettingsWindow)
+            w.client = Client()
+            css = w._glass_css({"tokens": {"accent": "#3584e4", "accent_fg": "#ffffff"}, "bg": "#101014"},
+                               {"compositor": {"features": features}})
+            self.assertEqual(css, "")
+            self.assertFalse(w._ink)
+            self.assertIsNone(w._backdrop)

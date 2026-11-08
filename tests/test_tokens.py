@@ -126,7 +126,7 @@ class PlaceholderTest(unittest.TestCase):
         self.assertIn(f"@define-color accent_bg_color {t.accent};", css)
         self.assertIn(f"--window-bg-color: {t.tokens['surface']};", css)
         self.assertIn(f"--popover-bg-color: {t.tokens['surface_overlay']};", css)
-        self.assertIn("--window-radius: 14px;", css)
+        self.assertIn("--window-radius: 0px;", css)   # the compositor rounds windows, not libadwaita
 
 
 if __name__ == "__main__":

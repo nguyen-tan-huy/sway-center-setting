@@ -33,6 +33,44 @@ class EffectsTest(unittest.TestCase):
                   "animation_duration_ms 0", 'layer_effects "waybar" "reset"'):
             self.assertIn(c, cmds)
 
+    def test_shadow_options_are_swayfx_s(self):
+        cmds = run(FX)
+        self.assertIn("shadow_offset 0 0", cmds)
+        self.assertIn("shadows_on_csd disable", cmds)
+        base = [c for c in cmds if c.startswith("shadow_color")][0].split()[1]
+        same = [c for c in cmds if c.startswith("shadow_inactive_color")][0].split()[1]
+        self.assertEqual(same, base)                              # 100 %: as strong as the focused one
+        cmds = run(FX, shadow_inactive=50, shadow_offset_x=3, shadow_offset_y=9, shadows_on_csd=True)
+        half = [c for c in cmds if c.startswith("shadow_inactive_color")][0].split()[1]
+        self.assertEqual(int(half[7:9], 16), round(int(base[7:9], 16) / 2))
+        self.assertIn("shadow_offset 3 9", cmds)
+        self.assertIn("shadows_on_csd enable", cmds)
+
+    def test_popups_follow_the_shadow_setting_with_shaped_shadows(self):
+        fx = FX | {"swayctl_features": ["ipc-features", "glass", "glass-windows", "shaped-shadow"]}
+        for on in (True, False):
+            cmds = run(fx, shadows=on, panels=True, glass=True)
+            word = "enable" if on else "disable"
+            for ns in ("swayctl-quick", "swayctl-launcher", "swayctl-notifications", "swayctl-traymenu"):
+                self.assertIn(f'layer_effects "{ns}" "shadows {word}"', cmds, ns)
+            # the bar and the frame never cast one
+            self.assertIn('layer_effects "swayctl-bar" "shadows disable"', cmds)
+
+    def test_without_shaped_shadows_nothing_changes(self):
+        old = FX | {"swayctl_features": ["ipc-features", "glass", "glass-windows"]}
+        cmds = run(old, shadows=True, panels=True, glass=True)
+        self.assertIn('layer_effects "swayctl-quick" "shadows disable"', cmds)    # a box shadow would ring the surface
+
+    def test_apple_like_animation_settings_go_to_a_compositor_that_has_them(self):
+        fx = FX | {"swayctl_features": ["ipc-features", "animation-apple"]}
+        cmds = run(fx)
+        for c in ("animation_close 0.7 0", "animation_popin 0.94", "animation_fade 1.5"):
+            self.assertIn(c, cmds)
+        cmds = run(fx, anim_close_pace=100, anim_close_bounce=10, anim_popin=80, anim_fade=100)
+        for c in ("animation_close 1 0.1", "animation_popin 0.8", "animation_fade 1"):
+            self.assertIn(c, cmds)
+        self.assertFalse([c for c in run(FX) if c.startswith(("animation_close", "animation_popin", "animation_fade"))])
+
     def test_modern_preset(self):
         cmds = run(FX, **presets.MODERN["effects"])
         self.assertIn("corner_radius 10", cmds)
@@ -43,47 +81,34 @@ class EffectsTest(unittest.TestCase):
 
 
 class WindowGlassTest(unittest.TestCase):
+    """No app window is glass: liquid glass is for the popups only."""
     FX = {"sway_original_version": "x", "swayctl_features": ["glass", "glass-shaped", "glass-windows"]}
+    APPS = ("io.github.huyhappy.SwayctlCenter.Settings", "chosua", "xdg-desktop-portal-gtk")
 
-    def test_settings_window_glass(self):
+    def test_no_app_window_is_glass_however_the_setting_is(self):
         m = EffectsModule()
         ctx = Context(Path("/app"), live=self.FX, theme=themes.BUILTIN["dark"])
+        for glass in (True, False):
+            cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": glass}, None, ctx)
+            for app in self.APPS:
+                self.assertIn(f'[app_id="{app}"] glass disable', cmds, app)
+                self.assertIn(f'for_window [app_id="{app}"] "glass disable"', cmds, app)
+            self.assertFalse(any("glass enable" in c and "app_id" in c for c in cmds))
+        # told once: a rule an older run left in sway is overruled by the newest, and none piles up
         v = schema.defaults()["effects"] | {"glass": True}
-        cmds = m.commands("effects", v, None, ctx)
-        rule = [c for c in cmds if c.startswith("for_window")]
-        # quoted: sway splits at commas
-        what = ('"glass enable, glass refraction 50, glass blur 0, glass highlight 0.9, '
-                'border none, shadows disable"')
-        # the settings window and every other glass app (ChoSua, the portal) get the same rule
-        self.assertEqual(rule, ['for_window [app_id="io.github.huyhappy.SwayctlCenter.Settings"] ' + what,
-                                'for_window [app_id="chosua"] ' + what,
-                                'for_window [app_id="xdg-desktop-portal-gtk"] ' + what])
-        self.assertIn('[app_id="chosua"] glass enable, glass refraction 50, '
-                      'glass blur 0, glass highlight 0.9, border none, shadows disable', cmds)
-        self.assertIn('[app_id="io.github.huyhappy.SwayctlCenter.Settings"] glass enable, glass refraction 50, '
-                      'glass blur 0, glass highlight 0.9, border none, shadows disable', cmds)
-        # same again: no new for_window (sway keeps every rule)
+        m.commands("effects", v, None, ctx)
         self.assertFalse(any(c.startswith("for_window") for c in m.commands("effects", v, None, ctx)))
-        off = m.commands("effects", v | {"glass": False}, None, ctx)
-        self.assertIn('for_window [app_id="io.github.huyhappy.SwayctlCenter.Settings"] "glass disable"', off)
-        self.assertIn("No matching node.", m.tolerated_errors)  # settings window not open
+        self.assertIn("No matching node.", m.tolerated_errors)  # the settings window is not open
 
-    def test_a_new_glass_window_is_handed_its_rule(self):
+    def test_a_new_window_of_those_apps_is_told_it_is_not_glass(self):
         m = EffectsModule()
         app = "io.github.huyhappy.SwayctlCenter.Settings"
         opened = {"change": "new", "container": {"id": 42, "app_id": app}}
         self.assertEqual(m.window_opened(opened), [])  # nothing applied yet
         ctx = Context(Path("/app"), live=self.FX, theme=themes.BUILTIN["dark"])
         m.commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
-        [cmd] = m.window_opened(opened)
-        self.assertTrue(cmd.startswith("[con_id=42] glass enable, "))
-        # every command of the rule, so a window that opened plain gets all of it
-        self.assertIn("border none, shadows disable", cmd)
-        self.assertEqual(m.window_opened({"change": "title", "container": {"id": 42, "app_id": app}}), [])
-        self.assertEqual(m.window_opened({"change": "new", "container": {"id": 7, "app_id": "firefox"}}), [])
-        # glass off: the rule says so
-        m.commands("effects", schema.defaults()["effects"] | {"glass": False}, None, ctx)
         self.assertEqual(m.window_opened(opened), ["[con_id=42] glass disable"])
+        self.assertEqual(m.window_opened({"change": "new", "container": {"id": 7, "app_id": "firefox"}}), [])
 
     def test_needs_the_feature(self):
         ctx = Context(Path("/app"), live=FX | {"swayctl_features": ["glass"]}, theme=themes.BUILTIN["dark"])
@@ -94,8 +119,9 @@ class WindowGlassTest(unittest.TestCase):
 class GlassTextTest(unittest.TestCase):
     FX = {"sway_original_version": "x", "swayctl_features": ["glass", "glass-shaped", "glass-text", "glass-windows"]}
 
-    def cmds(self, theme):
-        ctx = Context(Path("/app"), live=self.FX, theme=themes.BUILTIN[theme])
+    def cmds(self, theme, features=None):
+        live = self.FX if features is None else {"sway_original_version": "x", "swayctl_features": features}
+        ctx = Context(Path("/app"), live=live, theme=themes.BUILTIN[theme])
         return EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
 
     def test_no_adaptive_text(self):
@@ -103,39 +129,25 @@ class GlassTextTest(unittest.TestCase):
         for theme in ("dark", "light"):
             cmds = self.cmds(theme)
             self.assertTrue(all(c.endswith('"glass_text none"') for c in cmds if "glass_text" in c))
-            self.assertTrue(any("glass text none" in c for c in cmds if "SwayctlCenter" in c))
 
-    def test_key_ink(self):
-        # with the fork's key ink: ChoSua, the bar and Quick Settings get
-        # `auto`, the settings window too; the other surfaces keep picking
-        ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features":
-                      ["glass", "glass-shaped", "glass-text", "glass-windows", "glass-ink"]},
-                      theme=themes.BUILTIN["dark"])
-        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
-        self.assertTrue(any(c.startswith('[app_id="chosua"]') and "glass text auto" in c for c in cmds))
-        # the portal is a frosted sheet with the theme's text: no ink
-        self.assertTrue(any(c.startswith('[app_id="xdg-desktop-portal-gtk"]') and "glass text none" in c
-                            for c in cmds))
-        self.assertIn('layer_effects "swayctl-bar" "glass_text auto"', cmds)
+    def test_the_launchers_selected_row_keeps_its_own_colour_not_the_key(self):
+        from swayctl_center.modules import components
+        css = components.key_ink_css("#ffffff")
+        # text on the solid accent can't be inked by the compositor: it would show the key's purple
+        self.assertIn("window.ink-key .launcher-row.selected label", css)
+        self.assertIn("window.ink-key .launcher-row.selected image", css)
+
+    def test_key_ink_for_quick_settings_and_the_launcher_only(self):
+        cmds = self.cmds("dark", ["glass", "glass-shaped", "glass-text", "glass-windows", "glass-ink"])
         self.assertIn('layer_effects "swayctl-quick" "glass_text auto"', cmds)
+        self.assertIn('layer_effects "swayctl-launcher" "glass_text auto"', cmds)
         self.assertFalse(any(c == 'layer_effects "swayctl-osd" "glass_text auto"' for c in cmds))
-        self.assertTrue(any(c.startswith('[app_id="io.github.huyhappy.SwayctlCenter.Settings"]')
-                            and "glass text auto" in c for c in cmds))
-
-    def test_chosua_light_text(self):
-        # ChoSua draws light text and leaves its readability to the glass;
-        # the settings window still picks its own per pane
-        cmds = self.cmds("dark")
-        self.assertTrue(any(c.startswith('[app_id="chosua"]') and c.endswith("glass text light, border none, shadows disable")
-                            for c in cmds))
-        self.assertTrue(any(c.startswith('for_window [app_id="chosua"]') and "glass text light" in c for c in cmds))
-        self.assertTrue(any(c.startswith('[app_id="io.github.huyhappy.SwayctlCenter.Settings"]') and "glass text none" in c
-                            for c in cmds))
+        # the bar and the apps are not glass: no ink to pick for them
+        self.assertFalse(any('"swayctl-bar" "glass_text' in c for c in cmds))
+        self.assertFalse(any(c.startswith("[app_id=") and "glass text" in c for c in cmds))
 
     def test_needs_the_feature(self):
-        ctx = Context(Path("/app"), live=self.FX | {"swayctl_features": ["glass", "glass-shaped"]},
-                      theme=themes.BUILTIN["dark"])
-        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
+        cmds = self.cmds("dark", ["glass", "glass-shaped"])
         self.assertFalse(any("glass_text" in c for c in cmds))
 
 
@@ -162,8 +174,11 @@ class GlassTest(unittest.TestCase):
         cmds = run(self.FX_GLASS, glass=True)
         self.assertIn('layer_effects "swayctl-osd" "glass enable"', cmds)
         self.assertIn('layer_effects "swayctl-osd" "corner_radius 22"', cmds)
-        # the bar is shaped glass too (a pane per module): needs shaped-glass
-        self.assertIn('layer_effects "swayctl-bar" "glass disable"', cmds)
+        # the bar is never glass: it has no effects at all while the panels' effects are off
+        self.assertIn('layer_effects "swayctl-bar" "reset"', cmds)
+        self.assertFalse(any('"swayctl-bar" "glass enable"' in c for c in cmds))
+        panels = run(self.FX_GLASS, glass=True, panels=True)
+        self.assertIn('layer_effects "swayctl-bar" "glass disable"', panels)
         # Quick Settings: shaped glass (per control) needs the fork's shaped-glass patch
         self.assertIn('layer_effects "swayctl-quick" "glass disable"', cmds)
         shaped = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-shaped"]}, glass=True)
@@ -173,9 +188,11 @@ class GlassTest(unittest.TestCase):
         # off (their compositor box shadow read as a halo around the pills)
         self.assertIn('layer_effects "swayctl-quick" "shadows disable"', shaped)
         self.assertIn('layer_effects "swayctl-quick" "corner_radius 20"', shaped)
-        self.assertIn('layer_effects "swayctl-bar" "shadows disable"', shaped)
         self.assertIn('layer_effects "swayctl-notifications" "shadows disable"', shaped)
-        self.assertIn('layer_effects "swayctl-bar" "glass enable"', shaped)
+        self.assertIn('layer_effects "swayctl-launcher" "glass enable"', shaped)
+        self.assertIn('layer_effects "swayctl-notifications" "glass enable"', shaped)
+        for ns in ("swayctl-bar", "swayctl-frame", "swayctl-traymenu"):
+            self.assertFalse(any(c == f'layer_effects "{ns}" "glass enable"' for c in shaped), ns)
         self.assertIn('layer_effects "swayctl-osd" "glass_refraction 50"', cmds)
         self.assertIn('layer_effects "swayctl-osd" "glass_highlight 0.9"', cmds)
         self.assertIn("blur_passes 0", cmds)  # frost 0 (default): clear body
@@ -191,18 +208,18 @@ class GlassTest(unittest.TestCase):
         self.assertFalse(any("glass_edge" in c for c in cmds))
         # bar / Quick Settings: the same Liquid glass knobs as windows…
         lens = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-shaped", "glass-tune"]}, glass=True)
-        self.assertIn('layer_effects "swayctl-bar" "glass_edge 14"', lens)  # capped at the pills' radius
+        self.assertIn('layer_effects "swayctl-launcher" "glass_edge 13"', lens)  # capped at its corners
         self.assertIn('layer_effects "swayctl-quick" "glass_edge 16"', lens)
-        self.assertIn('layer_effects "swayctl-bar" "glass_highlight 0.9"', lens)
+        self.assertIn('layer_effects "swayctl-launcher" "glass_highlight 0.9"', lens)
         self.assertIn('layer_effects "swayctl-quick" "glass_thickness 90"', lens)
         # …and they move with the sliders (no demo-capsule pinning)
         moved = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-shaped", "glass-tune"]},
                     glass=True, glass_refraction=120, glass_thickness=300, glass_highlight=0.2,
                     glass_edge=40, glass_chroma=0)
-        self.assertIn('layer_effects "swayctl-bar" "glass_refraction 120"', moved)
+        self.assertIn('layer_effects "swayctl-launcher" "glass_refraction 90"', moved)   # asked for 120, held to 90
         self.assertIn('layer_effects "swayctl-quick" "glass_thickness 300"', moved)
         self.assertIn('layer_effects "swayctl-quick" "glass_highlight 0.2"', moved)
-        self.assertIn('layer_effects "swayctl-bar" "glass_edge 6"', moved)  # 40 % of the pills' 14
+        self.assertIn('layer_effects "swayctl-launcher" "glass_edge 5"', moved)  # 40 % of its 13
         self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0"', moved)
 
     def test_glass_blur_needs_its_feature(self):
@@ -225,7 +242,7 @@ class GlassEdgeCapTest(unittest.TestCase):
         from swayctl_center.modules.effects import glass_edge
         self.assertEqual(glass_edge("chosua", 100), 17)       # its bubbles: 18 px corners
         self.assertEqual(glass_edge("chosua", 50), 8)         # half of that (8.5, to even)
-        self.assertEqual(glass_edge("chosua", 300), 51)       # up to 3x
+        self.assertEqual(glass_edge("chosua", 300), 26)       # asked for 3x, held to 1.5x: past it colours bleed in
         self.assertEqual(glass_edge("swayctl-bar", 400), 14)  # out of range (an old px value): 100 %
         self.assertEqual(glass_edge("unknown-app", 100), 11)  # libadwaita panes
 
@@ -251,30 +268,78 @@ class PortalGlassTest(unittest.TestCase):
             self.assertTrue(portalglass.sync(False, "", home))    # off: the drop-in goes
             self.assertFalse(portalglass.dropin_path(home).exists())
 
-    def test_portal_sheet_without_key_ink(self):
+    def test_no_portal_sheet(self):
         ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features":
                       ["glass", "glass-shaped", "glass-text", "glass-windows"]},
                       theme=themes.BUILTIN["dark"])
         cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, ctx)
-        self.assertTrue(any(c.startswith('[app_id="xdg-desktop-portal-gtk"] glass enable') for c in cmds))
+        self.assertFalse(any(c.startswith('[app_id="xdg-desktop-portal-gtk"]') and "glass enable" in c for c in cmds))
 
 
 class AnimationKindsTest(unittest.TestCase):
+    def ctx(self):
+        return Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features": ["animation-kinds"]},
+                       theme=themes.BUILTIN["dark"])
+
     def test_each_kind_and_length(self):
-        ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features": ["animation-kinds"]},
-                      theme=themes.BUILTIN["dark"])
-        v = schema.defaults()["effects"] | {"animations": True, "anim_workspace": False, "anim_duration": 300}
-        cmds = EffectsModule().commands("effects", v, None, ctx)
+        v = schema.defaults()["effects"] | {"anim_open_close": True, "anim_workspace": False, "anim_move": True,
+                                            "anim_duration": 300}
+        cmds = EffectsModule().commands("effects", v, None, self.ctx())
         self.assertIn("animation_duration_ms 300", cmds)
         self.assertIn("animations open_close enable", cmds)
         self.assertIn("animations workspace disable", cmds)
         self.assertIn("animations move enable", cmds)
-        # off: no animation at all, whatever the kinds say
-        cmds = EffectsModule().commands("effects", v | {"animations": False}, None, ctx)
+
+    def test_every_kind_is_its_own_switch(self):
+        base = schema.defaults()["effects"] | {"anim_duration": 250}
+        for kind, flag in (("open_close", "anim_open_close"), ("workspace", "anim_workspace"), ("move", "anim_move")):
+            cmds = EffectsModule().commands("effects", base | {flag: True}, None, self.ctx())
+            self.assertIn("animation_duration_ms 250", cmds, kind)  # one kind alone is enough
+            for other in ("open_close", "workspace", "move"):
+                self.assertIn(f"animations {other} {'enable' if other == kind else 'disable'}", cmds, f"{kind}/{other}")
+
+    def test_nothing_on_means_no_animation_at_all(self):
+        cmds = EffectsModule().commands("effects", schema.defaults()["effects"], None, self.ctx())
         self.assertIn("animation_duration_ms 0", cmds)
+        self.assertIn("animations workspace disable", cmds)
+
+    def test_the_old_master_switch_does_nothing_now(self):
+        v = schema.defaults()["effects"] | {"animations": True}
+        self.assertIn("animation_duration_ms 0", EffectsModule().commands("effects", v, None, self.ctx()))
 
     def test_no_kinds_without_the_fork_feature(self):
         ctx = Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features": []},
                       theme=themes.BUILTIN["dark"])
-        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"animations": True}, None, ctx)
+        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"anim_move": True}, None, ctx)
         self.assertFalse(any(c.startswith("animations ") for c in cmds))
+
+
+class SpringAndSlideTest(unittest.TestCase):
+    def ctx(self, *features):
+        return Context(Path("/app"), live={"sway_original_version": "x", "swayctl_features": list(features)},
+                       theme=themes.BUILTIN["dark"])
+
+    def test_spring_settings_reach_the_fork(self):
+        v = schema.defaults()["effects"] | {"animations": True, "anim_curve": "spring", "anim_response": 280, "anim_bounce": 15}
+        cmds = EffectsModule().commands("effects", v, None, self.ctx("animation-spring"))
+        self.assertIn("animation_curve spring", cmds)
+        self.assertIn("animation_spring 280 0.15", cmds)
+        cmds = EffectsModule().commands("effects", v | {"anim_curve": "ease"}, None, self.ctx("animation-spring"))
+        self.assertIn("animation_curve ease", cmds)
+
+    def test_slide_is_a_setting(self):
+        v = schema.defaults()["effects"] | {"animations": True}
+        on = EffectsModule().commands("effects", v, None, self.ctx("animation-slide"))
+        off = EffectsModule().commands("effects", v | {"anim_slide": False}, None, self.ctx("animation-slide"))
+        self.assertIn("animations workspace_slide enable", on)
+        self.assertIn("animations workspace_slide disable", off)
+
+    def test_neither_is_sent_to_a_fork_without_them(self):
+        v = schema.defaults()["effects"] | {"animations": True}
+        cmds = EffectsModule().commands("effects", v, None, self.ctx("animation-kinds"))
+        self.assertFalse(any(c.startswith(("animation_curve", "animation_spring", "animations workspace_slide")) for c in cmds))
+
+    def test_spring_values_are_bounded(self):
+        for name, bad in (("anim_response", 50), ("anim_response", 5000), ("anim_bounce", -1), ("anim_bounce", 90)):
+            with self.assertRaises(ValueError, msg=f"{name}={bad}"):
+                schema.lookup("effects", name).validate(bad)

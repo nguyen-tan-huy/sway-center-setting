@@ -47,6 +47,46 @@ def run_binding(binding_id: str) -> int:
     return 1
 
 
+def background_argv(command: list[str], have=None) -> list[str]:
+    """`command` wrapped to run behind everything else: in the same capped slice as
+    the programs the daemon holds back (so together they stay under the processor
+    ceiling), batch scheduling, nice 19 and idle disk priority."""
+    import shutil
+    from .governor import SLICE
+    have = have or shutil.which
+    cmd = [c for c in command if c != "--"] if command[:1] == ["--"] else list(command)
+    for tool, args in (("ionice", ["ionice", "-c", "3"]), ("nice", ["nice", "-n", "39"]),
+                       ("chrt", ["chrt", "--batch", "0"])):
+        if have(tool):
+            cmd = args + cmd
+    if have("systemd-run"):
+        cmd = ["systemd-run", "--user", "--scope", "--quiet", "--collect", f"--slice={SLICE}", "--"] + cmd
+    return cmd
+
+
+def run_background(command: list[str]) -> int:
+    if not command or command == ["--"]:
+        print("usage: swayctl-center run-bg <command> [args...]", file=sys.stderr)
+        return 2
+    try:  # the slice carries the ceiling from the settings, also when the daemon isn't running
+        from . import governor
+        from .store import Store
+        store = Store()
+        store.load()
+        v = store.effective()["priority"]
+        cap = v["cpu_cap_battery"] if governor.on_battery() else v["cpu_cap"]
+        if cap < 100:
+            governor.ensure_slice(cap)
+    except Exception as e:  # noqa: BLE001 - a missing ceiling must not stop the command
+        print(f"swayctl-center: no processor ceiling ({e})", file=sys.stderr)
+    argv = background_argv(command)
+    try:
+        os.execvp(argv[0], argv)
+    except OSError as e:
+        print(f"swayctl-center: {argv[0]}: {e.strerror}", file=sys.stderr)
+        return 127
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="swayctl-center")
     sub = parser.add_subparsers(dest="cmd")
@@ -66,13 +106,16 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("status", help="print runtime status (active theme, night light...)")
     p = sub.add_parser("binding", help=argparse.SUPPRESS)  # run by keyboard shortcuts
     p.add_argument("id")
+    p = sub.add_parser("run-bg", help="run a command behind everything else, e.g. run-bg cargo build")
+    p.add_argument("command", nargs=argparse.REMAINDER)
     p = sub.add_parser("export", help="save settings, wallpaper and themes to a .zip")
     p.add_argument("file")
     p = sub.add_parser("import", help="restore settings from a backup .zip")
     p.add_argument("file")
     sub.add_parser("doctor", help="check that everything swayctl-center needs is in place")
     p = sub.add_parser("action", help="theme.toggle, night_light.toggle|warmer|cooler, lock, "
-                                      "notifications.panel|dnd, preset.modern|classic, clipboard.history|delete|clear, launcher.open")
+                                      "notifications.panel|dnd, preset.modern|classic, clipboard.history|delete|clear, launcher.open, "
+                                      "screenshot.region|full|window|quick, workspace.<number>")
     p.add_argument("name")
     args = parser.parse_args(argv)
 
@@ -106,6 +149,17 @@ def main(argv: list[str] | None = None) -> None:
         if what not in clipboard.ACTIONS:
             sys.exit(f"swayctl-center: unknown action {args.name}")
         clipboard.run(what)
+    elif args.cmd == "action" and args.name.startswith("screenshot."):
+        from . import screenshot
+        what = args.name.split(".", 1)[1]
+        if what not in screenshot.ACTIONS:
+            sys.exit(f"swayctl-center: unknown action {args.name}")
+        screenshot.run(what)
+    elif args.cmd == "action" and args.name.startswith("workspace.") and args.name[10:].isdigit():
+        from . import swayipc, wsguard
+        ipc = swayipc.Connection()
+        for cmd in wsguard.switch_commands(ipc.get_workspaces(), int(args.name[10:])):
+            ipc.command(cmd)
     elif args.cmd == "action" and args.name == "launcher.open":
         from . import clipboard
         clipboard.run("launcher", wait=False)
@@ -115,6 +169,8 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(_run(c.export, os.path.abspath(args.file)), indent=2))
     elif args.cmd == "import":
         print(json.dumps(_run(c.import_, os.path.abspath(args.file)), indent=2))
+    elif args.cmd == "run-bg":
+        sys.exit(run_background(args.command))
     elif args.cmd == "binding":
         sys.exit(run_binding(args.id))
     elif args.cmd == "doctor":

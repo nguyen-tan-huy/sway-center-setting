@@ -11,10 +11,12 @@ say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
 command -v pacman >/dev/null || { echo "needs pacman (Arch / CachyOS)"; exit 1; }
 if ! pacman -Qq sway swayfx 2>/dev/null | grep -q .; then
-  echo "Neither sway nor swayfx is installed: install one first (sudo pacman -S swayfx)."; exit 1
+  say "Neither sway nor swayfx is installed"
+  ask "Install swayfx now?" || { echo "install one first (sudo pacman -S swayfx)"; exit 1; }
+  sudo pacman -S --needed swayfx
 fi
 
-say "Installing swayctl-center, swayctl-bar and swayctl-fx (dependencies come from the repos)"
+say "Installing swayctl-center, swayctl-bar and swayctl-fx, plus the apps in this folder (dependencies come from the repos)"
 # one package per name: the newest (the folder can hold several versions if it was
 # extracted on top of an old one; pacman would then say "duplicate target")
 pick() { ls -1 "$1"-*.pkg.tar.zst 2>/dev/null | sort -V | tail -n1; }
@@ -23,7 +25,13 @@ for p in "$center" "$bar" "$fx"; do
   [ -n "$p" ] && [ -f "$p" ] || { echo "missing package in this folder"; exit 1; }
   echo "  $p"
 done
-sudo pacman -U --needed "$center" "$bar" "$fx"
+# the apps (ChoSua, ChoDiLamIDE) ride along when the bundle has them
+apps=""
+for a in chosua chodilamide-ide; do
+  p=$(pick "$a"); [ -n "$p" ] && [ -f "$p" ] && { echo "  $p"; apps="$apps $p"; }
+done
+# shellcheck disable=SC2086
+sudo pacman -U --needed "$center" "$bar" "$fx"$apps
 
 # what each settings page / Quick Settings tile talks to; only what's missing
 extras=""

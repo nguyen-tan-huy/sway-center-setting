@@ -1,20 +1,25 @@
 //! Quick Settings: a layer-shell popup under the bar with toggles, sliders,
-//! media and power, opened with a spring (fade + slide + slight scale) and
-//! closed with a short ease-in. Sub-pages (Wi-Fi, sound output, power mode,
-//! power) slide in with AdwNavigationView.
+//! media and power. The compositor opens and closes it (swayctl-fx, with the same animation
+//! settings as windows); this process draws it once and has no animation of its own.
+//! Sub-pages (Wi-Fi, sound output, power mode, power) are AdwNavigationView pages.
 
 use crate::config::Config;
 use crate::services::{dbus, procs, sway, Services};
-use crate::ui::{backdrop, catcher, icons};
+use crate::ui::{backdrop, catcher, compositor_anim, icons, quicklist};
 use adw::prelude::*;
-use gtk::{gdk, glib, graphene, gsk};
+use gtk::{gdk, glib};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 pub const NAMESPACE: &str = "swayctl-quick";
-const SLIDE: f32 = 12.0;
 const PANEL_WIDTH: i32 = 360;
+/// How the compositor moves this panel: out of the status button (top right, 48 px in from the card's
+/// edge). Its pace and curve are not ours: they are the compositor's own
+/// animation settings, the ones windows follow (Settings > Effects).
+const MOTION: compositor_anim::Motion = compositor_anim::Motion {
+    right: Some(48), top: 0, min_scale: 0.0, drop: 0.0, stretch: 0.045, fade: 5.0,
+};
 
 pub struct QuickSettings {
     app: adw::Application,
@@ -29,6 +34,11 @@ pub struct QuickSettings {
     /// this monitor (the rest of the popup must stay on screen)
     notif: RefCell<Option<(gtk::ScrolledWindow, gtk::Box)>>,
     notif_max: Cell<i32>,
+    /// builds the next cards of the list (when it is short of the screen, or the scroll nears
+    /// its end); true when there were more to build
+    notif_more: RefCell<Option<Rc<dyn Fn() -> bool>>>,
+    /// sizing the list is wanted: done once, after the changes that asked for it
+    sizing_queued: Cell<bool>,
     main_col: RefCell<Option<gtk::Box>>,
     /// what's behind the popup (taken as it opens), for light/dark text per pane
     backdrop: RefCell<Option<(Rc<backdrop::Grid>, gdk::Monitor)>>,
@@ -46,6 +56,7 @@ impl QuickSettings {
         Rc::new(Self { app: app.clone(), svc: svc.clone(), cfg: RefCell::new(cfg.clone()), win: RefCell::new(None),
                        catcher: RefCell::new(None), closing: Cell::new(false),
                        on_open: RefCell::new(None), notif: RefCell::new(None), notif_max: Cell::new(320),
+                       notif_more: RefCell::new(None), sizing_queued: Cell::new(false),
                        main_col: RefCell::new(None), backdrop: RefCell::new(None),
                        opened: Cell::new(0), subs: Default::default() })
     }
@@ -72,25 +83,27 @@ impl QuickSettings {
         if let Some(c) = self.catcher.take() {
             c.close();
         }
-        let stage = win.child().and_downcast::<gtk::Fixed>().unwrap();
-        let card = stage.first_child().unwrap();
-        freeze_size(&stage, &card);
-        let target = adw::CallbackAnimationTarget::new(move |v| place(&stage, &card, v));
-        let anim = adw::TimedAnimation::new(&win, 1.0, 0.0, 140, target);
-        anim.set_easing(adw::Easing::EaseInCubic);
+        // the compositor folds the panel back into the button and says how long that takes; when
+        // nothing moves (animations are off, or no such compositor) the window goes at once
+        let wait = compositor_anim::close(NAMESPACE).unwrap_or(std::time::Duration::ZERO);
         let me = Rc::downgrade(self);
-        let win2 = win.clone();
-        anim.connect_done(move |_| {
-            win2.close();
+        glib::timeout_add_local_once(wait, move || {
+            win.close();
             if let Some(me) = me.upgrade() {
                 me.win.replace(None);
                 me.closing.set(false);
             }
         });
-        anim.play();
+    }
+
+    /// The panel is on screen (the compositor opens it): light or dark text per pane, by what's behind it.
+    fn shown(self: &Rc<Self>) {
+        self.retag();
+        self.follow_backdrop();
     }
 
     fn open(self: &Rc<Self>, monitor: &gdk::Monitor) {
+        let _open = crate::trace::span("quick.open (to first frame requested)");
         if let Some(f) = self.on_open.borrow().as_ref() {
             f();
         }
@@ -98,11 +111,13 @@ impl QuickSettings {
         // before anything of ours is on screen: that's what will be behind it
         // (unless the compositor inks the text itself: then nothing is read)
         let ink = backdrop::compositor_ink();
+        let capture = crate::trace::span("quick.open: backdrop capture");
         self.backdrop.replace(if ink {
             None
         } else {
             backdrop::Grid::capture(monitor).map(|g| (Rc::new(g), monitor.clone()))
         });
+        drop(capture);
         let cfg = self.cfg.borrow().clone();
         let win = gtk::Window::builder().application(&self.app).css_classes(["quick-window"]).build();
         backdrop::set_key_ink(&win, ink);
@@ -120,7 +135,9 @@ impl QuickSettings {
         }
 
         let nav = adw::NavigationView::new();
+        let page = crate::trace::span("quick.open: main page built");
         nav.add(&self.main_page(&nav));
+        drop(page);
         let card = gtk::Box::builder().css_classes(["quick-panel"]).width_request(PANEL_WIDTH).build();
         card.append(&nav);
         // A clamp caps the *natural* width too: an ellipsized label (a long song
@@ -128,9 +145,7 @@ impl QuickSettings {
         // surface - and the compositor paints glass over all of it.
         let clamp = adw::Clamp::builder().maximum_size(PANEL_WIDTH).tightening_threshold(PANEL_WIDTH)
             .child(&card).build();
-        let stage = gtk::Fixed::new();
-        stage.put(&clamp, 0.0, 0.0);
-        win.set_child(Some(&stage));
+        win.set_child(Some(&clamp));
 
         let keys = gtk::EventControllerKey::new();
         let me = Rc::downgrade(self);
@@ -154,7 +169,7 @@ impl QuickSettings {
         // outside lands on the catcher instead.
         self.open_catcher(monitor);
 
-        // everything below works on the stage's child: the clamp, not the card in it
+        // everything below works on the window's child: the clamp, not the card in it
         let pane: gtk::Widget = clamp.clone().upcast();
         // A GTK window grows with its content but never shrinks back by itself:
         // after each page change (once the slide is over), size it to the page,
@@ -170,28 +185,16 @@ impl QuickSettings {
                 });
             });
         }
+        let limit = crate::trace::span("quick.open: limit_notifications");
         self.limit_notifications(monitor, &cfg);
-        place(&stage, &pane, 0.0);
-        freeze_size(&stage, &pane);
+        drop(limit);
+        if compositor_anim::supported() {
+            // the look is ours (where it grows out of); the pace is the compositor's
+            compositor_anim::set(NAMESPACE, &MOTION);
+        }
         win.present();
-        let target = {
-            let (stage, pane) = (stage.clone(), pane.clone());
-            adw::CallbackAnimationTarget::new(move |v| place(&stage, &pane, v))
-        };
-        let anim = adw::SpringAnimation::new(&win, 0.0, 1.0, adw::SpringParams::new(0.62, 1.0, 380.0), target);
-        let (stage2, card2, me) = (stage.clone(), pane.clone(), Rc::downgrade(self));
-        anim.connect_done(move |_| {
-            // let sub-pages resize the popup from now on
-            stage2.set_size_request(-1, -1);
-            stage2.set_child_transform(&card2, None);
-            // in place now: light or dark text per pane, by what's behind it
-            if let Some(me) = me.upgrade() {
-                me.retag();
-                me.follow_backdrop();
-            }
-        });
-        anim.play();
         self.win.replace(Some(win));
+        self.shown();
     }
 
     fn open_catcher(self: &Rc<Self>, monitor: &gdk::Monitor) {
@@ -238,14 +241,14 @@ impl QuickSettings {
             add(t.root.upcast_ref());
 
             let me = Rc::downgrade(self);
-            let t = Tile::new("bluetooth-active-symbolic", "Bluetooth", Some(Box::new(move || {
+            let t = Tile::new(icons::bluetooth(), "Bluetooth", Some(Box::new(move || {
                 if let Some(me) = me.upgrade() { me.settings("system:bluetooth") }
             })));
             let t2 = t.clone();
             self.subs.follow(&svc.bluetooth, move |b| {
                 t2.root.set_visible(b.available);
                 t2.set(b.powered, if b.powered { "On" } else { "Off" });
-                t2.icon.set_icon_name(Some(if b.powered { "bluetooth-active-symbolic" } else { "bluetooth-disabled-symbolic" }));
+                t2.icon.set_icon_name(Some(if b.powered || icons::bluetooth().starts_with("swayctl-") { icons::bluetooth() } else { "bluetooth-disabled-symbolic" }));
             });
             let (bt, s3) = (svc.bluetooth.clone(), sys.clone());
             t.button.connect_clicked(move |_| dbus::set_bluetooth(s3.clone(), !bt.get().powered));
@@ -259,6 +262,26 @@ impl QuickSettings {
                 t2.set(on.unwrap_or(false), if on.unwrap_or(false) { "On" } else { "Off" });
             });
             t.button.connect_clicked(move |_| dbus::center_action(ses.clone(), "night_light.toggle"));
+            add(t.root.upcast_ref());
+        }
+        if let Some(ses) = svc.session.clone() {
+            // the interface goes first: tap to switch it on or off, the arrow for how far
+            let (me, nav2) = (Rc::downgrade(self), nav.clone());
+            let t = Tile::new("power-profile-performance-symbolic", "Smooth UI", Some(Box::new(move || {
+                if let Some(me) = me.upgrade() { nav2.push(&me.priority_page()) }
+            })));
+            let t2 = t.clone();
+            self.subs.follow(&svc.priority, move |p| {
+                t2.root.set_visible(p.is_some());
+                let on = p.as_ref().is_some_and(|p| p.enabled);
+                t2.set(on, if on { "On" } else { "Off" });
+            });
+            let prio = svc.priority.clone();
+            t.button.connect_clicked(move |_| {
+                if let Some(p) = prio.get() {
+                    dbus::center_set(ses.clone(), "priority.enabled", serde_json::json!(!p.enabled));
+                }
+            });
             add(t.root.upcast_ref());
         }
         if let Some(n) = svc.notifier.clone().filter(|n| n.active.get()) {
@@ -396,7 +419,6 @@ impl QuickSettings {
 
     /// The latest notifications, newest first, with "Clear all".
     fn notification_list(self: &Rc<Self>, n: &Rc<crate::services::notify::Notifier>) -> gtk::Widget {
-        use crate::services::notify::Reason;
         let section = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(6)
             .css_classes(["quick-notifications"]).build();
         let head = gtk::Box::builder().spacing(6).build();
@@ -414,35 +436,109 @@ impl QuickSettings {
         let scroller = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never)
             .vscrollbar_policy(gtk::PolicyType::Automatic).child(&list).build();
         section.append(&scroller);
-        self.notif.replace(Some((scroller, list.clone())));
-        let (n2, sec2, me) = (n.clone(), section.clone(), Rc::downgrade(self));
-        self.subs.follow(&n.changed, move |_| {
-            while let Some(c) = list.first_child() {
-                list.remove(&c);
-            }
-            let items = n2.history();
-            sec2.set_visible(!items.is_empty());
-            for item in items.iter().take(30) {
-                let card = crate::ui::notify::build_card(item, -1, false);
-                card.root.add_css_class("compact");
-                let (id, nn) = (item.id, n2.clone());
-                card.close.connect_clicked(move |_| nn.close(id, Reason::Dismissed));
-                if item.default_action() {
-                    let (nn, me) = (n2.clone(), me.clone());
-                    let click = gtk::GestureClick::new();
-                    click.connect_released(move |_, _, _, _| {
-                        nn.invoke(id, "default");
-                        if let Some(me) = me.upgrade() { me.close() }
-                    });
-                    card.root.add_controller(click);
+        self.notif.replace(Some((scroller.clone(), list.clone())));
+        // Cards are kept between changes: a change builds, removes or moves only the cards it
+        // touches (quicklist::plan), and only as many are built as the screen shows - the rest
+        // when the list is short of the screen or the scroll nears its end.
+        struct Built {
+            id: u32,
+            from: crate::services::notify::Notification,
+            root: gtk::Widget,
+        }
+        let state: Rc<RefCell<(Vec<Built>, usize)>> = Rc::new(RefCell::new((Vec::new(), quicklist::FIRST)));
+        let me = Rc::downgrade(self);
+        let sync: Rc<dyn Fn()> = {
+            let (n2, sec2, list, state, me) = (n.clone(), section.clone(), list.clone(), state.clone(), me.clone());
+            Rc::new(move || {
+                let _t = crate::trace::span("quick.notification list synced");
+                let history = n2.history();
+                sec2.set_visible(!history.is_empty());
+                let mut st = state.borrow_mut();
+                let (cards, target) = &mut *st;
+                let plan = {
+                    let existing: Vec<_> = cards.iter().map(|c| (c.id, &c.from)).collect();
+                    quicklist::plan(&existing, &history, *target)
+                };
+                for id in &plan.remove {
+                    if let Some(i) = cards.iter().position(|c| c.id == *id) {
+                        list.remove(&cards.remove(i).root);
+                    }
                 }
-                list.append(&card.root);
-            }
-            if let Some(me) = me.upgrade() {
-                me.size_notifications();
+                let mut prev: Option<gtk::Widget> = None;
+                for item in history.iter().take(*target) {
+                    let root = match cards.iter().find(|c| c.id == item.id) {
+                        Some(c) if plan.build.iter().all(|b| *b != item.id) => c.root.clone(),
+                        _ => {
+                            let root = make_card(&n2, item, &me);
+                            list.insert_child_after(&root, prev.as_ref());
+                            cards.push(Built { id: item.id, from: item.clone(), root: root.clone() });
+                            prev = Some(root);
+                            continue;
+                        }
+                    };
+                    if root.prev_sibling().as_ref() != prev.as_ref() {
+                        list.reorder_child_after(&root, prev.as_ref());
+                    }
+                    prev = Some(root);
+                }
+            })
+        };
+        let more: Rc<dyn Fn() -> bool> = {
+            let (n2, state, sync, me) = (n.clone(), state.clone(), sync.clone(), me.clone());
+            Rc::new(move || {
+                let grew = {
+                    let mut st = state.borrow_mut();
+                    let total = n2.history().len();
+                    if st.1 >= total {
+                        false
+                    } else {
+                        st.1 += quicklist::MORE;
+                        true
+                    }
+                };
+                if grew {
+                    sync();
+                    if let Some(me) = me.upgrade() { me.queue_sizing() }
+                }
+                grew
+            })
+        };
+        self.notif_more.replace(Some(more.clone()));
+        // near the end of what is built: build the next ones
+        {
+            let more = more.clone();
+            let adj = scroller.vadjustment();
+            adj.connect_value_changed(move |a| {
+                if a.value() + a.page_size() >= a.upper() - 160.0 {
+                    more();
+                }
+            });
+        }
+        let me2 = me.clone();
+        self.subs.follow(&n.changed, move |_| {
+            sync();
+            // not open yet: opening sizes the list itself, once the popup's layout is known
+            if let Some(me) = me2.upgrade() {
+                if me.win.borrow().is_some() {
+                    me.queue_sizing();
+                }
             }
         });
         section.upcast()
+    }
+
+    /// Sizing the list (and tagging its cards) once per burst of changes, not once per change.
+    fn queue_sizing(self: &Rc<Self>) {
+        if self.sizing_queued.replace(true) {
+            return;
+        }
+        let me = Rc::downgrade(self);
+        glib::idle_add_local_once(move || {
+            if let Some(me) = me.upgrade() {
+                me.sizing_queued.set(false);
+                me.size_notifications();
+            }
+        });
     }
 
     /// How tall the notification list may be on `monitor`: the screen less the
@@ -491,6 +587,7 @@ impl QuickSettings {
 
     /// Tag each pane light or dark by what was behind the popup as it opened.
     fn retag(&self) {
+        let _t = crate::trace::span("quick.retag");
         let Some((grid, monitor)) = self.backdrop.borrow().clone() else { return };
         let Some(win) = self.win.borrow().clone() else { return };
         let Some(root) = win.child() else { return };
@@ -501,8 +598,16 @@ impl QuickSettings {
 
     /// The list's natural height, capped: scrolls beyond that.
     fn size_notifications(&self) {
+        let _t = crate::trace::span("quick.size_notifications");
         let Some((scroller, list)) = self.notif.borrow().clone() else { return };
         let (_, natural, _, _) = list.measure(gtk::Orientation::Vertical, PANEL_WIDTH - 28);
+        // short of the screen with more notifications waiting: build more first (it sizes again)
+        if natural < self.notif_max.get() {
+            let more = self.notif_more.borrow().clone();
+            if more.is_some_and(|f| f()) {
+                return;
+            }
+        }
         let h = natural.min(self.notif_max.get()).max(0);
         // max first: GTK refuses a min above the current max
         scroller.set_max_content_height(h.max(scroller.min_content_height()));
@@ -642,6 +747,74 @@ impl QuickSettings {
         self.sub_page("Power Mode", list.upcast_ref())
     }
 
+    /// How far the interface goes ahead of everything else: its priority, the ceiling for
+    /// background work and the graphics card limit. Each change is sent to the daemon at once.
+    fn priority_page(self: &Rc<Self>) -> adw::NavigationPage {
+        let list = Self::list();
+        let updating = Rc::new(Cell::new(false));
+        let ses = self.svc.session.clone();
+
+        let switch = |title: &str, subtitle: &str, path: &'static str| {
+            let row = adw::SwitchRow::builder().title(title).subtitle(subtitle).build();
+            let (ses, updating) = (ses.clone(), updating.clone());
+            row.connect_active_notify(move |r| {
+                if let (false, Some(s)) = (updating.get(), ses.clone()) {
+                    dbus::center_set(s, path, serde_json::json!(r.is_active()));
+                }
+            });
+            row
+        };
+        let spin = |title: &str, subtitle: &str, path: &'static str, lo: f64, hi: f64, step: f64| {
+            let row = adw::SpinRow::with_range(lo, hi, step);
+            row.set_title(title);
+            row.set_subtitle(subtitle);
+            let (ses, updating) = (ses.clone(), updating.clone());
+            row.connect_value_notify(move |r| {
+                if let (false, Some(s)) = (updating.get(), ses.clone()) {
+                    dbus::center_set(s, path, serde_json::json!(r.value().round() as i64));
+                }
+            });
+            row
+        };
+        let enabled = switch("Keep the desktop responsive", "Builds and indexers wait behind what you use",
+                             "priority.enabled");
+        let ui = spin("Interface priority", "The bar, Quick Settings and launcher: the lower, the higher (-11 is the most)",
+                      "priority.ui_nice", -11.0, 0.0, 1.0);
+        let cpu = spin("Background CPU ceiling (%)", "All waiting work together; the rest stays free",
+                       "priority.cpu_cap", 20.0, 100.0, 5.0);
+        let guard = switch("Hold back apps when the GPU is saturated", "Only the ones you are not looking at",
+                           "priority.gpu_guard");
+        let gpu = spin("GPU busy limit (%)", "A fifth of the card stays free at 80",
+                       "priority.gpu_limit", 30.0, 100.0, 5.0);
+        for row in [enabled.upcast_ref::<gtk::Widget>(), ui.upcast_ref(), cpu.upcast_ref(), guard.upcast_ref(),
+                    gpu.upcast_ref()] {
+            list.append(row);
+        }
+        let (e2, u2, c2, g2, p2) = (enabled.clone(), ui.clone(), cpu.clone(), guard.clone(), gpu.clone());
+        self.subs.follow(&self.svc.priority, move |p| {
+            let Some(p) = p else { return };
+            updating.set(true);
+            e2.set_active(p.enabled);
+            u2.set_value(p.ui_nice as f64);
+            c2.set_value(p.cpu_cap as f64);
+            g2.set_active(p.gpu_guard);
+            p2.set_value(p.gpu_limit as f64);
+            // what depends on the switch above is only worth touching while it is on
+            for w in [u2.upcast_ref::<gtk::Widget>(), c2.upcast_ref(), g2.upcast_ref()] {
+                w.set_sensitive(p.enabled);
+            }
+            p2.set_sensitive(p.enabled && p.gpu_guard);
+            updating.set(false);
+        });
+        let body = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(10).build();
+        body.append(&list);
+        let me = Rc::downgrade(self);
+        let more = gtk::Button::builder().label("Performance Settings…").css_classes(["flat", "pane"]).build();
+        more.connect_clicked(move |_| if let Some(me) = me.upgrade() { me.settings("priority") });
+        body.append(&more);
+        self.sub_page("Smooth UI", body.upcast_ref())
+    }
+
     fn power_page(self: &Rc<Self>) -> adw::NavigationPage {
         let list = Self::list();
         let items: [(&str, &str, Box<dyn Fn()>); 4] = [
@@ -674,46 +847,18 @@ fn profile_label(p: &str) -> String {
     .to_owned()
 }
 
-/// Size the popup window to its pane exactly (shrinking it if needed).
-fn fit(win: &gtk::Window, pane: &gtk::Widget) {
+/// The size the card wants: at most PANEL_WIDTH wide, as tall as its contents.
+fn card_size(pane: &gtk::Widget) -> (i32, i32) {
     let (min_w, nat_w, _, _) = pane.measure(gtk::Orientation::Horizontal, -1);
     let w = nat_w.min(PANEL_WIDTH).max(min_w);
     let (_, h, _, _) = pane.measure(gtk::Orientation::Vertical, w);
+    (w, h)
+}
+
+/// Size the popup window to its pane exactly (shrinking it if needed).
+fn fit(win: &gtk::Window, pane: &gtk::Widget) {
+    let (w, h) = card_size(pane);
     win.set_default_size(w, h);
-}
-
-/// Keep the stage at the card's size while it animates, so the layer surface
-/// doesn't resize every frame. Exactly the card's size: the compositor draws
-/// the shadow and glass for the whole surface, so no slack around it (the
-/// slide in from the bar is clipped at the top instead).
-fn freeze_size(stage: &gtk::Fixed, card: &gtk::Widget) {
-    let (min_w, nat_w, _, _) = card.measure(gtk::Orientation::Horizontal, -1);
-    let w = nat_w.min(PANEL_WIDTH).max(min_w);
-    let (_, h, _, _) = card.measure(gtk::Orientation::Vertical, w);
-    stage.set_size_request(w, h);
-}
-
-/// Progress 0 (hidden) .. 1 (open): fade, slide from the bar, scale 0.96 -> 1
-/// around the top edge.
-fn place(stage: &gtk::Fixed, card: &gtk::Widget, v: f64) {
-    let v = v as f32;
-    card.set_opacity(v.clamp(0.0, 1.0) as f64);
-    let w = card.width().max(stage.width_request()) as f32;
-    // "liquid" open: grows out of the status button (top right) taller-than-
-    // wide, and the spring's overshoot makes it bulge a little and settle,
-    // like a drop of glass finding its shape
-    // never larger than the card: an overshoot that grew it would grow the
-    // layer surface too, and it doesn't shrink back (a second, empty pane of
-    // glass behind it). The bounce shows as a quick squash-and-settle instead.
-    let k = (1.0 - v).abs();
-    let sx = 1.0 - 0.10 * k;
-    let sy = 1.0 - 0.24 * k;
-    let origin = graphene::Point::new(w - 48.0, 0.0);
-    let t = gsk::Transform::new()
-        .translate(&graphene::Point::new(origin.x(), origin.y() - (1.0 - v).max(0.0) * SLIDE))
-        .scale(sx, sy)
-        .translate(&graphene::Point::new(-origin.x(), -origin.y()));
-    stage.set_child_transform(card, Some(&t));
 }
 
 /// A rounded toggle with an icon, a title, a state line and an optional arrow
@@ -765,4 +910,33 @@ fn slider_row(icon: &str, value: f64, max: f64) -> (gtk::Box, gtk::Scale, gtk::I
     row.append(&image);
     row.append(&scale);
     (row, scale, image)
+}
+
+
+/// One compact card of the Quick Settings list, wired to close, answer and open.
+fn make_card(n: &Rc<crate::services::notify::Notifier>, item: &crate::services::notify::Notification,
+             me: &std::rc::Weak<QuickSettings>) -> gtk::Widget {
+    use crate::services::notify::Reason;
+    let card = crate::ui::notify::build_card(item, -1, false, true);
+    card.root.add_css_class("compact");
+    let (id, nn) = (item.id, n.clone());
+    card.close.connect_clicked(move |_| nn.close(id, Reason::Dismissed));
+    // an answer (Pair / Cancel) is given once: the card goes with it
+    for (b, key) in card.actions {
+        let nn = n.clone();
+        b.connect_clicked(move |_| {
+            nn.invoke(id, &key);
+            nn.close(id, Reason::Dismissed);
+        });
+    }
+    if item.default_action() {
+        let (nn, me) = (n.clone(), me.clone());
+        let click = gtk::GestureClick::new();
+        click.connect_released(move |_, _, _, _| {
+            nn.invoke(id, "default");
+            if let Some(me) = me.upgrade() { me.close() }
+        });
+        card.root.add_controller(click);
+    }
+    card.root.upcast()
 }

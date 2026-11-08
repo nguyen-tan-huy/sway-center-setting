@@ -70,7 +70,9 @@ def adwaita_css(theme: Theme | dict) -> str:
     lines = [f"@define-color {k} {v};" for k, v in names.items()]
     lines.append(":root {")
     lines += [f"  --{k.replace('_', '-')}: {v};" for k, v in names.items()]
-    lines.append(f"  --window-radius: {t['radius_lg']:g}px;")
+    # a window's corners are the compositor's to round (swayctl-fx masks every window by its corner radius
+    # and squares the ones in a corner of the screen): libadwaita's own would round it a second time
+    lines.append("  --window-radius: 0px;")
     lines.append("}")
     return "\n".join(lines) + "\n"
 

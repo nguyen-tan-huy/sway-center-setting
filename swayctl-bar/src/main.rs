@@ -10,6 +10,7 @@
 
 mod config;
 mod services;
+mod trace;
 mod ui;
 mod watch;
 
@@ -28,7 +29,6 @@ window.bar .workspace.ws-blob { min-width: 0; min-height: 0; padding: 0; margin:
 /* the number under the drop: accent text whatever the generated theme says (it
    used to key on `.focused`, and key-coloured text over the opaque drop isn't inked) */
 window.bar .workspace.under-drop, window.bar .workspace.under-drop label { color: @accent_fg_color; text-shadow: none; }
-.workspaces:not(.on-dark):not(.on-light) .workspace { transition: color 90ms linear; }
 ";
 
 struct State {
@@ -39,6 +39,8 @@ struct State {
     launcher: Rc<ui::launcher::Launcher>,
     popups: Option<Rc<ui::notify::Popups>>,
     bars: RefCell<Vec<gtk::ApplicationWindow>>,
+    /// the glass frame under the windows (one per monitor), when the style asks for it
+    frames: RefCell<Vec<gtk::Window>>,
     /// the bars' service subscriptions, ended on each rebuild (they hold the
     /// old bars' widgets)
     bar_subs: watch::Subs,
@@ -51,23 +53,35 @@ impl State {
         for w in self.bars.take() {
             w.close();
         }
+        for w in self.frames.take() {
+            w.close();
+        }
         self.bar_subs.clear();
         let cfg = config::load(&self.dir);
         ui::backdrop::set_current(&cfg.backdrop);
+        ui::icons::install();
+        ui::icons::set_style(&cfg.icon_style);
         self.quick.set_config(&cfg);
         self.launcher.set_config(&cfg.launcher);
         self.notifications(&cfg);
         let Some(display) = gdk::Display::default() else { return };
         let monitors = display.monitors();
         let mut bars = Vec::new();
+        let mut frames = Vec::new();
         for i in 0..monitors.n_items() {
             if let Some(m) = monitors.item(i).and_downcast::<gdk::Monitor>() {
+                if cfg.frame.glass {
+                    let f = ui::frame::build(app, &m, &cfg, &self.svc, &self.bar_subs);
+                    f.present();
+                    frames.push(f);
+                }
                 let w = ui::bar::build(app, &m, &cfg, &self.svc, &self.quick, &self.bar_subs);
                 w.present();
                 bars.push(w);
             }
         }
         *self.bars.borrow_mut() = bars;
+        *self.frames.borrow_mut() = frames;
     }
 
     /// Serve notifications or not, as the settings say.
@@ -111,6 +125,10 @@ fn main() -> glib::ExitCode {
         if st.borrow().is_none() {
             let (system, session) = conns.borrow_mut().take().unwrap_or((None, None));
             let display = gdk::Display::default().expect("no display");
+            // this bar has no animation of its own: popups are opened and closed by the compositor
+            // (swayctl-fx, with the animation settings windows follow). GTK's own (page slides,
+            // revealers, CSS transitions) are off, so nothing here moves on a clock of its own.
+            gtk::Settings::for_display(&display).set_gtk_enable_animations(false);
             let base = gtk::CssProvider::new();
             base.load_from_string(DEFAULT_CSS);
             gtk::style_context_add_provider_for_display(&display, &base, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -134,7 +152,7 @@ fn main() -> glib::ExitCode {
                 launcher: ui::launcher::Launcher::new(app, &cfg.launcher),
                 dir,
                 svc,
-                bars: RefCell::new(Vec::new()), bar_subs: Default::default(),
+                bars: RefCell::new(Vec::new()), frames: RefCell::new(Vec::new()), bar_subs: Default::default(),
                 css,
                 _monitors: RefCell::new(Vec::new()),
             });

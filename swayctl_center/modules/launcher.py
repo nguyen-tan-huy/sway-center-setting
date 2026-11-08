@@ -20,7 +20,7 @@ from typing import Any
 
 from .. import units
 from . import Context
-from .components import (MILK_INSET, MILK_RIM, MILK_TEXT, Component, _font, _font_weight,
+from .components import (minimal_palette, MILK_INSET, MILK_RIM, MILK_TEXT, Component, _font, _font_weight,
                          _glass, milk_fill, milk_opacity)
 
 THEME_NAME = "swayctl-center"
@@ -228,7 +228,36 @@ child:selected .item-box, row:selected .item-box {{ background: alpha(@accent_bg
 .keybind-button:hover {{ background: alpha(@theme_fg_color, 0.08); }}
 .keybind-bind {{ font-weight: 700; margin-right: 4px; }}
 .error {{ background: @error_bg_color; color: @error_fg_color; padding: 10px; border-radius: 10px; }}
-""" + (self.glass_css(k, milk_opacity(ctx), size) if _glass(ctx) else "")
+""" + (self.glass_css(k, milk_opacity(ctx), size) if _glass(ctx) else "") + self.minimal_css(ctx, size)
+
+    @staticmethod
+    def minimal_css(ctx: Context, size: int = 11) -> str:
+        """Interface style "minimal": one white (or near-black) card holding a grey pill field and a quiet list."""
+        if ((ctx.values or {}).get("appearance") or {}).get("ui_style") != "minimal":
+            return ""
+        m = minimal_palette(bool(ctx.theme.dark))
+        card, ink = m["card"], m["ink"]
+        line, soft = f"alpha({ink}, 0.08)", f"alpha({ink}, 0.055)"
+        return f"""
+/* interface style: minimal (Modern Minimal cards) */
+.box-wrapper {{ background: {card}; color: {ink}; border: 1px solid {line}; border-radius: 28px; box-shadow: none; padding: 14px; }}
+.box-wrapper label {{ color: {ink}; text-shadow: none; }}
+.input {{ background: {soft}; box-shadow: none; border: none; border-radius: 999px; padding: 14px 22px; color: {ink}; caret-color: {ink}; }}
+.input, .input text, .input placeholder {{ font-size: {size + 5}pt; color: {ink}; }}
+.input placeholder {{ color: alpha({ink}, 0.4); }}
+.content-container {{ background: none; box-shadow: none; border: none; border-radius: 0; padding: 0; margin-top: 10px; }}
+.item-box {{ background: none; box-shadow: none; border-radius: 16px; padding: 8px 12px; }}
+.item-text {{ font-size: {size + 1}pt; font-weight: 600; color: {ink}; }}
+.item-subtext {{ font-size: {size - 1}pt; color: alpha({ink}, 0.55); }}
+child:selected .item-box, row:selected .item-box {{ background: alpha({ink}, 0.075); color: {ink}; box-shadow: none; }}
+child:selected .item-subtext, row:selected .item-subtext {{ color: alpha({ink}, 0.6); }}
+child:selected label, row:selected label {{ color: {ink}; text-shadow: none; }}
+.item-quick-activation {{ background: {soft}; color: alpha({ink}, 0.6); border-radius: 999px; }}
+.placeholder, .elephant-hint {{ color: alpha({ink}, 0.55); }}
+.preview {{ background: {soft}; border: none; border-radius: 18px; }}
+.keybinds {{ background: none; box-shadow: none; border: none; border-top: 1px solid {line}; border-radius: 0; padding: 10px 6px 0; margin-top: 10px; color: alpha({ink}, 0.6); }}
+.keybind-button:hover {{ background: {soft}; border-radius: 999px; }}
+"""
 
     @staticmethod
     def glass_css(k, opacity: float = 0.5, size: int = 11) -> str:

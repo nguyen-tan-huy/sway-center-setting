@@ -24,6 +24,9 @@ PROGRAMS = [
     ("wlsunset", "night light", False),
     ("cliphist", "clipboard history", False),
     ("wl-paste", "clipboard history (wl-clipboard)", False),
+    ("grim", "screenshots", False),
+    ("slurp", "screenshots: picking a region", False),
+    ("satty", "screenshots: annotating", False),
     ("brightnessctl", "screen brightness", True),
     ("wl-clip-persist", "keeping copied text after an app closes", True),
     ("walker", "the launcher (fuzzel is used without it)", True),
@@ -113,7 +116,50 @@ def run_checks() -> list[Check]:
                             "" if ok else f"{enabled}, {'running' if active else 'not running'}",
                             optional=optional, fix=f"enable:{unit}",
                             fix_hint=f"sudo systemctl enable --now {unit}"))
+    checks += _priority_checks()
     return checks
+
+
+def _priority_checks() -> list[Check]:
+    """What the Performance setting needs from the system (see governor.py)."""
+    import resource
+    out = []
+    soft = resource.getrlimit(resource.RLIMIT_NICE)[0]
+    lowest = 20 - soft if soft != resource.RLIM_INFINITY else -20  # the lowest nice the user may set
+    out.append(Check("priority:nice", "Favoring the app in use (nice limit)", lowest <= -4,
+                     f"may go down to nice {lowest}; needs -4 or lower" if lowest > -4 else f"down to nice {lowest}",
+                     optional=True,
+                     fix_hint="add yourself to the audio group (limits.d/20-audio.conf) or set "
+                              "'<user> - nice -11' in /etc/security/limits.d/"))
+    # the processor ceiling needs the cpu controller handed to the user's manager, and the GPU guard a
+    # driver that reports utilization
+    uid = os.getuid()
+    ctl = Path(f"/sys/fs/cgroup/user.slice/user-{uid}.slice/user@{uid}.service/cgroup.subtree_control")
+    try:
+        has_cpu = "cpu" in ctl.read_text().split()
+    except OSError:
+        has_cpu = False
+    out.append(Check("priority:cpu-ceiling", "Processor ceiling for background work (cgroup cpu controller)", has_cpu,
+                     "the user manager may set it" if has_cpu else "the cpu controller is not delegated to your session",
+                     optional=True, fix_hint="systemd must run with cgroup v2 and Delegate=cpu on user@.service"))
+    from . import governor
+    busy = governor.read_gpu_busy()
+    out.append(Check("priority:gpu", "Graphics card load is readable (GPU guard)", busy is not None,
+                     f"{busy}% busy now" if busy is not None else "the driver doesn't report utilization", optional=True))
+    schedulers = []
+    for dev in sorted(Path("/sys/block").glob("*/queue/scheduler")):
+        if dev.parent.parent.name.startswith(("loop", "ram", "zram")):
+            continue
+        try:
+            schedulers.append((dev.parent.parent.name, dev.read_text().split("[")[1].split("]")[0]))
+        except (OSError, IndexError):
+            pass
+    bad = [f"{n}: {sch}" for n, sch in schedulers if sch not in ("bfq", "mq-deadline")]
+    out.append(Check("priority:io", "Background disk priority is honored (disk scheduler)", not bad,
+                     ", ".join(bad) if bad else "bfq or mq-deadline", optional=True,
+                     fix_hint="echo bfq | sudo tee /sys/block/<disk>/queue/scheduler "
+                              "(make it permanent with a udev rule)"))
+    return out
 
 
 def apply_fix(fix: str) -> str | None:

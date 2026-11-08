@@ -44,7 +44,7 @@ class NativeBarTest(unittest.TestCase):
     def test_clock_format_and_margins(self):
         cfg = BarModule().native_config(bar(), ctx())
         self.assertEqual(cfg["clock_format"], "%H:%M")
-        self.assertEqual(cfg["margins"], [8, 8, 0, 8])
+        self.assertEqual(cfg["margins"], [0, 0, 0, 0])   # attached to the edge
         self.assertEqual(BarModule().native_config(bar(), ctx("classic"))["margins"], [0, 0, 0, 0])
 
     def test_css_from_tokens(self):
@@ -52,7 +52,8 @@ class NativeBarTest(unittest.TestCase):
         css = BarModule().files(bar(), ctx())["style.css"]
         self.assertIn(f"@define-color accent_bg_color {t.accent};", css)
         self.assertIn(f".tile.active {{ background: {t.accent};", css)
-        self.assertIn("border-radius: 14px", css)
+        self.assertIn("window.bar {", css)
+        self.assertIn("border-radius: 0; border: none;", css)   # the bar is square and attached
 
     def test_bar_height_sizes_the_modules(self):
         """bar.height used to be only the window's minimum: lower than the
@@ -66,9 +67,13 @@ class NativeBarTest(unittest.TestCase):
         # pill + gaps + the 1.5 px glass rim add up to the height asked for
         css = bar_size_css(53, 1.5)
         self.assertIn("min-height: 40px; margin-top: 5px", css)   # 40 + 3 (rim) + 2*5 = 53
-        # too low for the text: the font shrinks to fit instead
-        self.assertIn("window.bar label { font-size:", bar_size_css(24, 1.5, 12))
-        self.assertNotIn("font-size", bar_size_css(53, 1.5, 12))
+        # the text and the icons follow the height, both ways
+        import re
+        size = lambda h, pt=12: float(re.search(r"label \{ font-size: ([\d.]+)px", bar_size_css(h, 1.5, pt)).group(1))
+        self.assertLess(size(24), size(34))
+        self.assertLess(size(34), size(53))
+        icon = lambda h: int(re.search(r"-gtk-icon-size: (\d+)px", bar_size_css(h, 1.5)).group(1))
+        self.assertLess(icon(26), icon(53))
         # 0 = fit the contents: no sizing rules
         self.assertEqual(bar_size_css(0), "")
 

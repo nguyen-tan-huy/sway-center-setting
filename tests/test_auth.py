@@ -50,7 +50,7 @@ class PlanTest(unittest.TestCase):
     def test_nothing_enabled_only_lock_services(self):
         etc, vendor = dirs()
         names = {c.path.name for c in auth.plan(values(), etc, vendor)}
-        self.assertEqual(names, {"swayctl-lock-password", "swayctl-lock-fingerprint"})
+        self.assertEqual(names, {"swayctl-lock-password", "swayctl-lock-fingerprint", "swayctl-lock-face"})
 
     def test_apply_then_restore_round_trip(self):
         etc, vendor = dirs()
@@ -82,7 +82,8 @@ class PlanTest(unittest.TestCase):
         self.assertTrue(st["pending"])
         self.assertEqual(st["applied"]["sudo"], [])
         self.assertFalse(st["fingerprint"]["installed"])
-        self.assertNotIn("face", st)
+        self.assertFalse(st["face"]["installed"])
+        self.assertEqual(st["face"]["cameras"], [])
 
 
 class LockCommandTest(unittest.TestCase):
@@ -105,3 +106,53 @@ class LockCommandTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FaceTest(unittest.TestCase):
+    def test_block_has_the_face_before_the_password(self):
+        new = auth.with_block(SUDO, ["fingerprint", "face"])
+        self.assertEqual(auth.block_methods(new), ["fingerprint", "face"])
+        lines = new.splitlines()
+        i = lines.index(auth.BEGIN)
+        self.assertEqual(lines[i + 2].split()[-1], "pam_howdy.so")
+        self.assertEqual(lines[i + 4], "auth\t\tinclude\t\tsystem-auth")  # the password stays
+        self.assertEqual(auth.strip_block(new), SUDO)
+
+    def test_a_module_in_its_own_folder_is_named_by_path(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "howdy").mkdir()
+        (d / "howdy" / "pam_howdy.so").write_text("")
+        self.assertEqual(auth.module_ref("face", (auth.MODULE_DIR, d / "howdy")), str(d / "howdy" / "pam_howdy.so"))
+        self.assertEqual(auth.module_ref("face", (d / "none",)), "pam_howdy.so")
+        self.assertEqual(auth.module_ref("fingerprint"), "pam_fprintd.so")
+
+    def test_only_infrared_cameras_are_offered(self):
+        sys_dir = Path(tempfile.mkdtemp())
+        for node, name, index in (("video0", "Integrated Camera: Integrated C", "0"),
+                                  ("video1", "Integrated Camera: Integrated C", "1"),
+                                  ("video2", "Integrated Camera: Integrated I", "0"),
+                                  ("video4", "USB IR Camera", "0"),
+                                  ("video5", "USB IR Camera", "1")):
+            (sys_dir / node).mkdir()
+            (sys_dir / node / "name").write_text(name + "\n")
+            (sys_dir / node / "index").write_text(index + "\n")
+        self.assertEqual(auth.face_cameras(sys_dir), ["/dev/video4"])
+
+    def test_howdy_device_and_setup_script(self):
+        cfg = Path(tempfile.mkdtemp()) / "config.ini"
+        cfg.write_text("[video]\ndevice_path = /dev/video0\ndark_threshold = 60\n")
+        self.assertEqual(auth.howdy_device(cfg), "/dev/video0")
+        script = auth.face_setup_script("/dev/video2", cfg)
+        import subprocess
+        subprocess.run(["sh", "-c", script], check=True)
+        self.assertEqual(auth.howdy_device(cfg), "/dev/video2")
+        self.assertIn("dark_threshold = 60", cfg.read_text())
+        self.assertEqual(auth.howdy_device(cfg.parent / "missing.ini"), "")
+
+    def test_lock_command_asks_for_the_face(self):
+        from swayctl_center import themes
+        from swayctl_center.modules import Context
+        from swayctl_center.modules.components import lock_command
+        v = {"auth": {"lock_screen": "swayctl-lock", "face_lock": True}}
+        ctx = Context(data_dir=Path("/tmp"), values=v, theme=themes.BUILTIN["light"])
+        self.assertIn("--face", lock_command(ctx))

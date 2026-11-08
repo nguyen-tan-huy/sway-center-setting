@@ -21,9 +21,31 @@ pub struct Config {
     pub clock_format_alt: String,
     /// shell command run by the "open settings" entries; {page} is replaced
     pub settings_command: String,
+    /// "ipados" (the bar's own drawn set) or "system" (the icon theme's)
+    pub icon_style: String,
     pub notifications: Notifications,
+    pub frame: Frame,
     pub backdrop: Backdrop,
     pub launcher: Launcher,
+}
+
+/// The frame style's glass: a pane under the windows that covers the bar, the screen edges and the
+/// gaps, with a cut-out for every window (the compositor's shaped glass bends what is behind it
+/// along the edges of those cut-outs).
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
+pub struct Frame {
+    pub glass: bool,
+    /// the windows' corner radius (px): the cut-outs have the same
+    pub radius: f64,
+    /// opacity of the pane's white body; shaped glass needs some alpha to follow
+    pub tint: f64,
+}
+
+impl Default for Frame {
+    fn default() -> Self {
+        Self { glass: false, radius: 12.0, tint: 0.06 }
+    }
 }
 
 /// The Spotlight-style launcher over elephant (`swayctl-bar launcher`).
@@ -79,6 +101,10 @@ pub struct Backdrop {
     pub lens_tint: f32,
     /// effects.glass_blur 0..1: frost smooths out the detail behind
     pub frost: f32,
+    /// "dark" / "light": the theme picks the ink side (smoked glass with light
+    /// text, milky glass with dark text) instead of the wallpaper; "" = by
+    /// what's behind (liquid glass always is)
+    pub theme: String,
 }
 
 /// The notification server (org.freedesktop.Notifications), replacing swaync.
@@ -133,7 +159,9 @@ impl Default for Config {
             clock_format: "%H:%M".into(),
             clock_format_alt: "%a %d %b  %H:%M".into(),
             settings_command: "swayctl-center ui --page {page}".into(),
+            icon_style: "ipados".into(),
             notifications: Notifications::default(),
+            frame: Frame::default(),
             backdrop: Backdrop::default(),
             launcher: Launcher::default(),
         }
@@ -149,7 +177,7 @@ pub fn dir_from_args(args: &[String]) -> PathBuf {
     let base = std::env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config"));
-    base.join("swayctl-center/generated/swayctl-bar")
+    base.join("swayctl-center/generated/bar")
 }
 
 pub fn load(dir: &Path) -> Config {

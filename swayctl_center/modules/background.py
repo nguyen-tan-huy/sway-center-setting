@@ -52,6 +52,14 @@ class BackgroundModule:
     def commands(self, section: str, v: dict[str, Any], changed: set[str] | None,
                  ctx: Context | None = None) -> list[str]:
         color = v["color"] or (ctx.theme.bg if ctx is not None and ctx.theme else "#000000")
+        look = ((ctx.values or {}).get("appearance") or {}) if ctx is not None else {}
+        if look.get("ui_style") == "frame":
+            # the frame style: no wallpaper, the colour of the bar fills what the windows leave
+            return [f"output * bg {look.get('frame_color', '#0b1014')} solid_color"]
+        if look.get("ui_style") == "minimal" and ctx is not None and ctx.theme:
+            # Modern Minimal: no wallpaper, the page colour the bar and the windows' gaps share (like the frame)
+            from .components import minimal_palette
+            return [f"output * bg {minimal_palette(bool(ctx.theme.dark))['page']} solid_color"]
         if v["image"] and ctx is not None:
             path = str(ctx.data_dir / v["image"])
             return [f"output * bg {_quote(path)} {v['mode']} {color}"]

@@ -1,12 +1,12 @@
-"""Unlocking with a password or a fingerprint (fprintd).
+"""Unlocking with a password, a fingerprint (fprintd) or a face (Howdy).
 
 Where it applies:
   lock    swayctl-lock, which asks the password and the fingerprint at once;
           each has its own PAM service (swayctl-lock-password/-fingerprint)
   sudo, polkit, login (ly)
           the system's PAM files get a marked block with `auth sufficient
-          pam_fprintd.so` before their first auth line, then whatever was
-          there (the password) - never instead of it
+          pam_fprintd.so` / `pam_howdy.so` before their first auth line, then
+          whatever was there (the password) - never instead of it
 
 Nothing here writes /etc itself: plan() works out every file's new text as
 the user and apply_script() is the root shell script that writes them (run
@@ -23,11 +23,14 @@ from pathlib import Path
 PAM_DIR = Path("/etc/pam.d")
 VENDOR_PAM_DIR = Path("/usr/lib/pam.d")      # e.g. polkit-1 ships only here
 MODULE_DIR = Path("/usr/lib/security")
-METHODS = ("fingerprint",)
-PAM_MODULE = {"fingerprint": "pam_fprintd.so"}
+METHODS = ("fingerprint", "face")
+PAM_MODULE = {"fingerprint": "pam_fprintd.so", "face": "pam_howdy.so"}
+# Howdy installs its module in a folder of its own on some systems
+FACE_MODULE_DIRS = (MODULE_DIR, MODULE_DIR / "howdy", Path("/lib/security/howdy"))
+HOWDY_CONFIG = Path("/etc/howdy/config.ini")
 # where the setting applies -> PAM service file
 TARGETS = {"sudo": "sudo", "polkit": "polkit-1", "login": "ly"}
-LOCK_SERVICES = ("password", "fingerprint")
+LOCK_SERVICES = ("password", "fingerprint", "face")
 BEGIN = "# >>> swayctl-center: fingerprint unlock (managed; turn it off in the app to remove)"
 END = "# <<< swayctl-center"
 _BLOCK = re.compile(re.escape(BEGIN) + r".*?" + re.escape(END) + r"\n?", re.S)
@@ -38,9 +41,22 @@ def lock_service(method: str) -> str:
     return f"swayctl-lock-{method}"
 
 
+def module_ref(method: str, module_dirs=None) -> str:
+    """How a PAM line names the module: its file name, or the full path when
+    it isn't in the system's security folder."""
+    name = PAM_MODULE[method]
+    if method != "face":
+        return name
+    for d in (module_dirs or FACE_MODULE_DIRS):
+        if (d / name).exists():
+            return name if d == MODULE_DIR else str(d / name)
+    return name
+
+
 def lock_service_text(method: str) -> str:
     auth = {"password": "auth       include    login",
-            "fingerprint": f"auth       required   {PAM_MODULE['fingerprint']}"}[method]
+            "fingerprint": f"auth       required   {PAM_MODULE['fingerprint']}",
+            "face": f"auth       required   {module_ref('face')}"}[method]
     return ("#%PAM-1.0\n"
             f"# swayctl-lock: unlock with the {method} (written by swayctl-center)\n"
             f"{auth}\n"
@@ -56,7 +72,7 @@ def with_block(text: str, methods: list[str]) -> str:
     text = strip_block(text)
     if not methods:
         return text
-    block = BEGIN + "\n" + "".join(f"auth       sufficient   {PAM_MODULE[m]}\n" for m in methods) + END + "\n"
+    block = BEGIN + "\n" + "".join(f"auth       sufficient   {module_ref(m)}\n" for m in methods) + END + "\n"
     lines = text.splitlines(keepends=True)
     for i, line in enumerate(lines):
         first = line.split()[:1]
@@ -175,6 +191,49 @@ def fingerprint_readers() -> list[str]:
         return []
 
 
+def face_cameras(sys_dir: Path = Path("/sys/class/video4linux")) -> list[str]:
+    """Infrared cameras (/dev/videoN): Howdy only trusts those, a plain webcam
+    could be fooled by a photo."""
+    found = []
+    try:
+        nodes = sorted(sys_dir.iterdir(), key=lambda p: (len(p.name), p.name))
+    except OSError:
+        return []
+    for node in nodes:
+        try:
+            name = (node / "name").read_text().strip().lower()
+            index = (node / "index").read_text().strip()
+        except OSError:
+            continue
+        if index == "0" and re.search(r"\bir\b|infrared", name):
+            found.append(f"/dev/{node.name}")
+    return found
+
+
+def howdy_installed(module_dirs=None) -> bool:
+    return any((d / PAM_MODULE["face"]).exists() for d in (module_dirs or FACE_MODULE_DIRS))
+
+
+def howdy_device(config: Path = HOWDY_CONFIG) -> str:
+    """The camera Howdy is set to use ('' when unset or unreadable)."""
+    try:
+        for line in config.read_text().splitlines():
+            m = re.match(r"\s*device_path\s*=\s*(\S+)", line)
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return ""
+
+
+def face_setup_script(camera: str, config: Path = HOWDY_CONFIG) -> str:
+    """Root script: point Howdy at the infrared camera."""
+    c, cfg = shlex.quote(camera), shlex.quote(str(config))
+    return ("set -e\n"
+            f"[ -f {cfg} ] || {{ echo 'Howdy has no config yet: {config}'; exit 1; }}\n"
+            f"sed -i \"s|^device_path.*|device_path = $(printf %s {c})|\" {cfg}\n")
+
+
 def status(values: dict, pam_dir: Path = PAM_DIR, vendor_dir: Path = VENDOR_PAM_DIR,
            module_dir: Path = MODULE_DIR, readers: list[str] | None = None) -> dict:
     applied = {}
@@ -188,6 +247,7 @@ def status(values: dict, pam_dir: Path = PAM_DIR, vendor_dir: Path = VENDOR_PAM_
     return {
         "fingerprint": {"hardware": fingerprint_readers() if readers is None else readers,
                         "installed": (module_dir / PAM_MODULE["fingerprint"]).exists()},
+        "face": {"installed": howdy_installed(), "cameras": face_cameras(), "device": howdy_device()},
         "applied": applied,
         "pending": pending,
         "user": os.environ.get("USER", ""),

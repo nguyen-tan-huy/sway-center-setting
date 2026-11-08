@@ -21,6 +21,7 @@ pub struct Services {
     pub profile: Rc<Watch<String>>,
     pub media: Rc<Watch<dbus::Media>>,
     pub night_light: Rc<Watch<Option<bool>>>,
+    pub priority: Rc<Watch<Option<dbus::Priority>>>,
     pub volume: Rc<Watch<procs::Volume>>,
     pub tray: Option<Rc<tray::Tray>>,
     pub notifier: Option<Rc<notify::Notifier>>,
@@ -43,6 +44,7 @@ impl Services {
         let profile = on_system(dbus::power_profile).unwrap_or_else(|| Watch::new(String::new()));
         let media = session.clone().map(dbus::media).unwrap_or_else(|| Watch::new(Default::default()));
         let night_light = session.clone().map(dbus::night_light).unwrap_or_else(|| Watch::new(None));
+        let priority = session.clone().map(dbus::priority).unwrap_or_else(|| Watch::new(None));
         Rc::new(Self {
             sway: sway::Sway::start(),
             volume: procs::volume(),
@@ -54,6 +56,7 @@ impl Services {
             profile,
             media,
             night_light,
+            priority,
             system,
             session,
         })

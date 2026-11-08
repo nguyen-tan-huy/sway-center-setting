@@ -42,9 +42,11 @@ def base_import(dark: bool) -> str:
     return f'@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained{variant}.css");'
 
 
-def css(dark: bool, accent: str, accent_fg: str, opacity: float) -> str:
+def css(dark: bool, accent: str, accent_fg: str, opacity: float, radius: int = 18) -> str:
     """GTK 3 CSS: the window one frosted sheet; `opacity` (the shell's milk,
-    0.04..0.2) makes it a little thicker."""
+    0.04..0.2) makes it a little thicker. `radius` is the compositor's
+    corner_radius: sway clips every window to it, so the sheet draws the same
+    corners instead of its own."""
     surface, fg = SURFACE[dark]
     sheet = f"alpha({surface}, {min(0.66 + opacity, 0.9):.2f})"
     rim = "alpha(white, 0.22)" if dark else "alpha(white, 0.70)"
@@ -57,10 +59,10 @@ def css(dark: bool, accent: str, accent_fg: str, opacity: float) -> str:
 
 /* one sheet of frosted glass: the window is the panel, inside it is clear */
 window.background, dialog.background {{
-  background: {sheet}; background-image: none; border-radius: 18px; color: {fg};
+  background: {sheet}; background-image: none; border-radius: {radius}px; color: {fg};
 }}
 decoration, .csd decoration, dialog.csd decoration, window.csd decoration {{
-  border-radius: 18px; border: 1px solid {rim}; box-shadow: inset 0 1px 0 {shine}; margin: 0;
+  border-radius: {radius}px; border: 1px solid {rim}; box-shadow: inset 0 1px 0 {shine}; margin: 0;
 }}
 .dialog-vbox, stack, scrolledwindow, viewport, paned, notebook, notebook > stack,
 treeview.view, iconview, list, .view, placessidebar, placessidebar.sidebar, placessidebar list,
@@ -71,7 +73,7 @@ filechooser, filechooser box, actionbar, .titlebar:not(headerbar), infobar, head
 /* the header is drawn apart from the window's background (CSD): the sheet too */
 headerbar, headerbar:backdrop {{
   background: {sheet}; background-image: none;
-  border-radius: 18px 18px 0 0; min-height: 46px;
+  border-radius: {radius}px {radius}px 0 0; min-height: 46px;
   border-width: 0 0 1px 0; border-style: solid; border-color: {hair};
 }}
 paned > separator, paned.horizontal > separator, paned > separator.wide {{

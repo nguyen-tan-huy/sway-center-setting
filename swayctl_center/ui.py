@@ -60,12 +60,30 @@ CHOICE_LABELS: dict[str, dict[str, str]] = {
                                     "none": "Off"},
     "input.touchpad.events": {"enabled": "On", "disabled": "Off",
                               "disabled_on_external_mouse": "Off while a mouse is plugged in"},
+    "appearance.ui_style": {"flat": "Square (attached to the screen, no gaps)", "floating": "Square",
+                            "rounded": "Rounded with gaps, no glass", "liquid": "Liquid glass popups (rounded, with gaps)",
+                            "frame": "Frame (solid bar and background around the windows)",
+                            "minimal": "Modern Minimal (soft cards, hairlines, one dark accent)"},
+    "bar.icon_style": {"ipados": "iPadOS", "system": "System theme"},
+    "appearance.quick_surface": {"auto": "Follow the interface style", "flat": "Flat (no glass, no blur)"},
+    "scrolling.profile": {"off": "Off", "light": "Light glide", "smooth": "Smooth", "fluid": "Long glide"},
+    "effects.anim_feel": {"off": "Off", "subtle": "Subtle", "smooth": "Smooth", "playful": "Playful", "quick": "Quick",
+                          "custom": "Custom"},
+    "layout.window_style": {"compact": "Compact", "balanced": "Balanced", "spacious": "Spacious", "custom": "Custom"},
+    "effects.glass_style": {"off": "Off", "subtle": "Subtle", "clear": "Clear", "frosted": "Frosted", "prism": "Prism",
+                            "bold": "Bold", "custom": "Custom"},
+    "effects.shadow_style": {"off": "Off", "soft": "Soft", "deep": "Deep", "custom": "Custom"},
+    "priority.responsiveness": {"off": "Off", "balanced": "Balanced", "maximum": "Maximum", "custom": "Custom"},
     "keybindings.modifier": {"Mod4": "Super (Windows key)", "Mod1": "Alt", "Control": "Ctrl"},
     "idle.lock_background": {"color": "Theme color", "wallpaper": "Wallpaper"},
     "notifications.image_visibility": {"when-available": "When available"},
     "launcher.search_engine": {"google": "Google", "duckduckgo": "DuckDuckGo", "bing": "Bing",
                                "brave": "Brave Search", "startpage": "Startpage", "youtube": "YouTube"},
 }
+
+
+# choices still accepted from old settings but not offered
+HIDDEN_CHOICES = {("appearance.ui_style", c) for c in ("floating", "flat", "rounded", "frame")}  # kept for old settings; offered: liquid, minimal
 
 
 def choice_label(path: str, value: str) -> str:
@@ -76,22 +94,39 @@ def choice_label(path: str, value: str) -> str:
     return _(text[:1].upper() + text[1:])
 
 
+# What the effects section shows on the Desktop page: shadows, animations and liquid glass (corners and
+# dimming come with the interface style; the corners start from it and can be tuned)
+EFFECT_GROUPS = [("Shadows", ["shadow_style"]),
+                 ("Animations", ["anim_feel"]),
+                 ("Liquid glass", ["glass_style"]),
+                 ("~More effect options", ["glass", "glass_refraction", "glass_blur", "glass_highlight", "glass_thickness", "glass_edge", "glass_opacity", "glass_chroma", "corner_radius", "shadows", "shadow_blur_radius", "shadow_offset_y", "shadow_offset_x", "shadow_inactive",
+                                  "shadows_on_csd", "anim_open_close", "anim_move", "anim_workspace", "anim_slide", "anim_quick",
+                                  "anim_curve", "anim_response", "anim_bounce", "anim_duration", "anim_close_pace",
+                                  "anim_close_bounce", "anim_popin", "anim_fade"])]
+
 # Sections of a page, in order; keys not listed go at the end.
 GROUPS: dict[str, list[tuple[str, list[str]]]] = {
-    "layout": [("", ["border_style", "border", "gaps_inner", "gaps_outer", "focus_follows_mouse"]),
-               ("Advanced", ["floating_border", "hide_edge_borders", "smart_gaps", "mouse_warping",
-                             "focus_on_window_activation", "workspace_auto_back_and_forth"])],
-    "input.keyboard": [("Layout", ["xkb_layout", "xkb_variant", "xkb_options"]),
-                       ("Typing", ["repeat_delay", "repeat_rate"])],
-    "bar": [("", ["position", "shape", "height", "padding", "theme"]),
-            ("Modules", ["modules_left", "modules_center", "modules_right"]),
-            ("", ["clock_format"])],
-    "effects": [("", ["corner_radius", "dim_inactive", "glass"]),
-                ("Liquid glass", ["glass_refraction", "glass_thickness", "glass_edge",
-                                  "glass_blur", "glass_opacity",
-                                  "glass_highlight", "glass_chroma"]),
-                ("Animations", ["animations", "anim_open_close", "anim_workspace", "anim_move",
-                                "anim_duration"])],
+    "layout": [("", ["window_style", "focus_follows_mouse"]),
+               ("~More window options", ["border_style", "border", "gaps_inner", "gaps_outer", "floating_border",
+                                         "hide_edge_borders", "smart_gaps", "mouse_warping",
+                                         "focus_on_window_activation", "workspace_auto_back_and_forth"])],
+    "priority": [("", ["responsiveness"]),
+                 ("~More performance options", ["enabled", "focus_boost", "favor_windows", "focus_nice", "ui_nice",
+                                                "compositor_realtime", "cpu_cap", "cpu_cap_battery", "background_nice",
+                                                "pressure_guard", "gpu_guard", "gpu_limit", "pressure_cpu", "pressure_io",
+                                                "interval", "protect"])],
+    "bar": [("", ["position", "height"]),
+            ("~More bar options", ["icon_style", "theme", "modules_left", "modules_center", "modules_right",
+                                   "clock_format"])],
+    "effects": [("Shadows", ["shadow_style"]),
+                ("Animations", ["anim_feel"]),
+                ("Liquid glass", ["glass_style"]),
+                ("~More effect options", ["dim_inactive", "glass", "glass_refraction", "glass_blur", "glass_highlight",
+                                          "glass_thickness", "glass_edge", "glass_opacity", "glass_chroma"]
+                 + ["corner_radius", "shadows", "shadow_blur_radius", "shadow_offset_y", "shadow_offset_x", "shadow_inactive",
+                                  "shadows_on_csd", "anim_open_close", "anim_move", "anim_workspace", "anim_slide", "anim_quick",
+                                  "anim_curve", "anim_response", "anim_bounce", "anim_duration", "anim_close_pace",
+                                  "anim_close_bounce", "anim_popin", "anim_fade"])],
     "notifications": [("", ["dnd_on_start", "position_x", "position_y", "timeout"]),
                       ("Advanced", ["output", "width", "max_visible", "timeout_low", "timeout_critical"])],
     "launcher": [("Show in results", ["apps", "settings", "calc", "files", "websearch"]),
@@ -114,6 +149,9 @@ SLIDERS = {
     "effects.glass_thickness": ("Thin", "Thick"),
 }
 
+# number settings dragged with their value shown, in this unit
+PIXELS = {"effects.corner_radius": ("Square", "Round", "px")}
+
 # number settings picked from a few named steps instead of dragged (a value that
 # is none of them - typed in the file, an old preset - shows nothing selected)
 LEVELS: dict[str, list[tuple[str, float]]] = {
@@ -124,27 +162,35 @@ LEVELS: dict[str, list[tuple[str, float]]] = {
     "effects.glass_edge": [("Thin", 40), ("Normal", 100), ("Thick", 180), ("Max", 300)],
     "effects.glass_chroma": [("None", 0.0), ("Subtle", 0.15), ("Normal", 0.35), ("Rainbow", 0.7)],
     "effects.glass_thickness": [("Clear", 0), ("Thin", 30), ("Normal", 90), ("Thick", 300), ("Max", 800)],
-    "effects.corner_radius": [("Square", 0), ("Small", 6), ("Medium", 12), ("Large", 20), ("Round", 30)],
     "effects.dim_inactive": [("Off", 0.0), ("Subtle", 0.06), ("Medium", 0.15), ("Strong", 0.3)],
+    "effects.shadow_blur_radius": [("Tight", 8), ("Normal", 20), ("Soft", 40), ("Very soft", 70)],
+    "effects.shadow_offset_y": [("None", 0), ("Slight", 6), ("Normal", 12), ("Deep", 24)],
+    "effects.shadow_inactive": [("None", 0), ("Faint", 40), ("Half", 60), ("Same", 100)],
     "effects.anim_duration": [("Fast", 120), ("Normal", 200), ("Relaxed", 320), ("Slow", 500)],
+    "effects.anim_close_pace": [("Fast exit", 55), ("Quicker", 70), ("Same", 100)],
+    "effects.anim_close_bounce": [("None", 0), ("Slight", 10), ("Bouncy", 25)],
+    "effects.anim_popin": [("Big pop", 80), ("Gentle", 90), ("Subtle", 94), ("Almost none", 98)],
+    "effects.anim_fade": [("With the motion", 100), ("Ahead", 150), ("Well ahead", 220)],
+    "bar.height": [("Compact", 26), ("Normal", 30), ("Large", 38)],
     "layout.border": [("None", 0), ("Thin", 1), ("Normal", 2), ("Thick", 4), ("Heavy", 6)],
     "layout.floating_border": [("None", 0), ("Thin", 1), ("Normal", 2), ("Thick", 4), ("Heavy", 6)],
-    "layout.gaps_inner": [("None", 0), ("Small", 6), ("Medium", 12), ("Large", 20), ("Huge", 32)],
-    "layout.gaps_outer": [("None", 0), ("Small", 6), ("Medium", 12), ("Large", 20), ("Huge", 32)],
-    "scrolling.touchpad_speed": [("Slow", 0.6), ("Normal", 1.2), ("Fast", 2.0), ("Very fast", 3.0)],
-    "scrolling.mouse_speed": [("Slow", 0.25), ("Normal", 0.45), ("Fast", 0.9), ("Very fast", 1.6)],
+    "layout.gaps_inner": [("None", 0), ("Small", 4), ("Normal", 8), ("Medium", 12), ("Large", 20), ("Huge", 32)],
+    "layout.gaps_outer": [("None", 0), ("Small", 4), ("Normal", 8), ("Medium", 12), ("Large", 20), ("Huge", 32)],
+    "scrolling.touchpad_speed": [("Very slow", 0.3), ("Slow", 0.6), ("Normal", 1.2), ("Fast", 2.0), ("Very fast", 3.0)],
+    "scrolling.browser_scale": [("Same as others", 1.0), ("Slower", 0.8), ("Much slower", 0.6), ("Slowest", 0.4), ("Crawl", 0.25)],
+    "scrolling.page_share": [("A quarter of the screen", 0.25), ("Half the screen", 0.5), ("Most of the screen", 0.85)],
+    "scrolling.mouse_speed": [("Very slow", 0.1), ("Slow", 0.2), ("Normal", 0.45), ("Fast", 0.9), ("Very fast", 1.6)],
     "scrolling.touchpad_glide": [("Short", 0.95), ("Normal", 0.98), ("Long", 0.99), ("Very long", 0.995)],
     "scrolling.mouse_glide": [("Short", 0.95), ("Normal", 0.98), ("Long", 0.99), ("Very long", 0.995)],
     "input.touchpad.pointer_accel": [("Slow", -0.5), ("Normal", 0.0), ("Fast", 0.4), ("Very fast", 0.8)],
     "input.pointer.pointer_accel": [("Slow", -0.5), ("Normal", 0.0), ("Fast", 0.4), ("Very fast", 0.8)],
-    "input.touchpad.scroll_factor": [("Slow", 0.5), ("Normal", 1.0), ("Fast", 2.0), ("Very fast", 3.0)],
-    "input.pointer.scroll_factor": [("Slow", 0.5), ("Normal", 1.0), ("Fast", 2.0), ("Very fast", 3.0)],
+    "input.touchpad.scroll_factor": [("Very slow", 0.25), ("Slow", 0.5), ("Normal", 1.0), ("Fast", 2.0), ("Very fast", 3.0)],
+    "input.pointer.scroll_factor": [("Very slow", 0.2), ("Slow", 0.4), ("Normal", 1.0), ("Fast", 2.0), ("Very fast", 3.0)],
     "input.keyboard.repeat_delay": [("Short", 300), ("Normal", 600), ("Long", 900)],
     "input.keyboard.repeat_rate": [("Slow", 15), ("Normal", 25), ("Fast", 40), ("Very fast", 60)],
     "night_light.temperature": [("Very warm", 2500), ("Warm", 3200), ("Medium", 4000), ("Mild", 5000)],
     "font.size": [("Small", 9), ("Normal", 10), ("Medium", 12), ("Large", 14), ("Huge", 18)],
     "font.monospace_size": [("Small", 9), ("Normal", 10), ("Medium", 12), ("Large", 14), ("Huge", 18)],
-    "bar.height": [("Fit", 0), ("Compact", 24), ("Normal", 30), ("Tall", 40)],
     "bar.padding": [("None", 0), ("Small", 4), ("Normal", 10), ("Large", 16)],
     "notifications.max_visible": [("1", 1), ("2", 2), ("4", 4), ("6", 6)],
     "notifications.width": [("Narrow", 320), ("Normal", 400), ("Wide", 500), ("Wider", 650)],
@@ -221,7 +267,8 @@ PAGES = {
     "power": [("system:power", ""), ("idle", "Lock & Idle"), ("auth", "Fingerprint")],
     "appearance": [("appearance", ""), ("background", "Wallpaper"), ("font", "Fonts"),
                    ("theming", "Other apps"), ("location", "Location")],
-    "desktop": [("layout", "Windows"), ("effects", "Effects"), ("bar", "Bar")],
+    # corners, glass and smooth scrolling come with the interface style; gaps and animations can be changed after
+    "desktop": [("layout", "Windows"), ("effects", "Effects"), ("bar", "Bar"), ("priority", "Performance")],
     "notifications": [("notifications", "")],
     "search": [("launcher", "Launcher"), ("clipboard", "Clipboard")],
 }
@@ -350,23 +397,6 @@ def _is_glass_pane(w: Gtk.Widget) -> bool:
     return False
 
 
-def _settings_ink_css(accent_fg: str) -> str:
-    """Key ink beyond the bar's widgets: fields, checks, chips and what sits
-    on the accent (a suggested button, the selected sidebar entry)."""
-    from .modules.components import INK_KEY as k
-    return f"""
-window.ink-key entry, window.ink-key spinbutton, window.ink-key text, window.ink-key dropdown,
-window.ink-key checkbutton, window.ink-key expander-widget, window.ink-key row,
-window.ink-key label.title-1, window.ink-key label.title-2, window.ink-key label.heading,
-window.ink-key label.dim-label, window.ink-key box > label {{
-  color: {k}; text-shadow: none; -gtk-icon-shadow: none;
-}}
-window.ink-key button.suggested-action label, window.ink-key button.suggested-action image,
-window.ink-key button.destructive-action label, window.ink-key row:selected label,
-window.ink-key row:selected image {{ color: {accent_fg}; }}
-"""
-
-
 def _inside(w: Gtk.Widget, *names: str) -> bool:
     p = w.get_parent()
     while p is not None:
@@ -424,8 +454,9 @@ class SettingRow(Gtk.ListBoxRow):
             w.set_digits(0 if t == "int" else 2)
             w.connect("value-changed", self._spin_changed)
         elif t == "enum":
-            w = Gtk.DropDown.new_from_strings([choice_label(self.path, c) for c in self.key["choices"]])
-            w.connect("notify::selected", lambda d, _p: self._changed(self.key["choices"][d.get_selected()]))
+            choices = [c for c in self.key["choices"] if (self.path, c) not in HIDDEN_CHOICES]
+            w = Gtk.DropDown.new_from_strings([choice_label(self.path, c) for c in choices])
+            w.connect("notify::selected", lambda d, _p: self._changed(choices[d.get_selected()]))
         elif self.path in OUTPUT_PICKERS:
             # "" first (the focused monitor), then the connected ones by connector name
             self._outputs = [""] + _output_names()
@@ -553,7 +584,7 @@ class DurationRow(Gtk.ListBoxRow):
 class SliderRow(Gtk.ListBoxRow):
     """A number as a slider with words at both ends (e.g. Slow ... Fast)."""
 
-    def __init__(self, page: Page, key: dict[str, Any], low: str, high: str):
+    def __init__(self, page: Page, key: dict[str, Any], low: str, high: str, unit: str = ""):
         super().__init__(activatable=False)
         self.page, self.key = page, key
         self.path = f"{key['section']}.{key['name']}"
@@ -562,7 +593,10 @@ class SliderRow(Gtk.ListBoxRow):
         lo, hi = key.get("min", 0.0), key.get("max", 1.0)
         step = 1.0 if key["type"] == "int" else (hi - lo) / 100
         self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, step)
-        self.scale.set_draw_value(False)
+        self.scale.set_draw_value(bool(unit))
+        if unit:
+            self.scale.set_value_pos(Gtk.PositionType.RIGHT)
+            self.scale.set_format_value_func(lambda _s, v: f"{v:g} {unit}")
         self.scale.set_hexpand(True)
         self.scale.set_size_request(220, -1)
         self.scale.add_mark(key["default"], Gtk.PositionType.BOTTOM, None)  # where "default" is
@@ -883,6 +917,8 @@ class SchemaPage(Page):
             return FontRow(self, key)
         if path in LEVELS:
             return LevelRow(self, key, LEVELS[path])
+        if path in PIXELS:
+            return SliderRow(self, key, *PIXELS[path])
         if path in SLIDERS:
             return SliderRow(self, key, *SLIDERS[path])
         if path in DURATION_KEYS:
@@ -951,18 +987,15 @@ class AppearancePage(SchemaPage):
         "dark_at": lambda v: v["mode"] == "auto" and v["schedule"] == "custom",
         "light_theme": lambda v: v["mode"] != "dark",
         "dark_theme": lambda v: v["mode"] != "light",
+        "frame_color": lambda v: v["ui_style"] == "frame",
     }
 
     def __init__(self, win, section, title, keys):
         super().__init__(win, section, title, keys)
         toggle = Gtk.Button(label=_("Switch light/dark now"), halign=Gtk.Align.START)
         toggle.connect("clicked", lambda _b: win.action("theme.toggle"))
-        modern = Gtk.Button(label=_("Use the modern look"), halign=Gtk.Align.START,
-                            tooltip_text="Liquid glass, floating rounded bar, gaps between windows")
-        modern.connect("clicked", lambda _b: win.action("preset.modern"))
         buttons = Gtk.Box(spacing=8)
         buttons.append(toggle)
-        buttons.append(modern)
         self.insert_child_after(buttons, self.status)
         self.swatches = Gtk.Box(spacing=0, halign=Gtk.Align.START)
         self.insert_child_after(self.swatches, self.get_first_child())
@@ -1029,10 +1062,16 @@ class EffectsPage(SchemaPage):
         "glass_highlight": lambda v: v["glass"],
         "glass_edge": lambda v: v["glass"],
         "glass_chroma": lambda v: v["glass"],
-        "anim_open_close": lambda v: v["animations"],
-        "anim_workspace": lambda v: v["animations"],
-        "anim_move": lambda v: v["animations"],
-        "anim_duration": lambda v: v["animations"],
+        "shadow_blur_radius": lambda v: v["shadows"],
+        "shadow_offset_x": lambda v: v["shadows"],
+        "shadow_offset_y": lambda v: v["shadows"],
+        "shadow_inactive": lambda v: v["shadows"],
+        "shadows_on_csd": lambda v: v["shadows"],
+        "anim_slide": lambda v: v["anim_workspace"],
+        "anim_response": lambda v: v["anim_curve"] == "spring",
+        "anim_bounce": lambda v: v["anim_curve"] == "spring",
+        "anim_duration": lambda v: v["anim_curve"] == "ease",
+        "anim_close_bounce": lambda v: v["anim_curve"] == "spring",
     }
 
     def update_status(self, status):
@@ -1047,9 +1086,9 @@ class EffectsPage(SchemaPage):
 
 
 class AuthPage(SchemaPage):
-    """Fingerprint (fprintd) unlock: whether there's a reader, installing and
-    enrolling (in a terminal, they ask questions), and writing PAM on request
-    (pkexec) - never on its own."""
+    """Fingerprint (fprintd) and face (Howdy) unlock: whether there's a reader or
+    an infrared camera, installing and enrolling (in a terminal, they ask
+    questions), and writing PAM on request (pkexec) - never on its own."""
 
     def __init__(self, win, section, title, keys):
         super().__init__(win, section, title, keys)
@@ -1058,12 +1097,17 @@ class AuthPage(SchemaPage):
         for name in self.rows:
             if name.startswith("fingerprint_"):
                 self.visible_when[name] = lambda v: bool(self.state.get("fingerprint", {}).get("hardware"))
+            elif name.startswith("face_"):
+                self.visible_when[name] = lambda v: bool(self.state.get("face", {}).get("cameras")
+                                                         and self.state.get("face", {}).get("installed"))
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,
                       margin_top=8, margin_bottom=8, margin_start=12, margin_end=12)
         self.info = Gtk.Label(xalign=0, wrap=True)
         buttons = Gtk.Box(spacing=8)
         self.btn = {}
         for key, label in (("install", _("Install…")), ("fingerprint", _("Add a fingerprint…")),
+                           ("install_face", _("Install Howdy…")), ("camera", _("Point Howdy at the camera…")),
+                           ("face", _("Add a face…")),
                            ("apply", _("Apply")), ("restore", _("Undo all changes"))):
             b = Gtk.Button(label=label)
             b.connect("clicked", getattr(self, f"_{key}"))
@@ -1071,7 +1115,8 @@ class AuthPage(SchemaPage):
             buttons.append(b)
         self.btn["apply"].add_css_class("suggested-action")
         self.note = Gtk.Label(xalign=0, wrap=True, label=_(
-            "Your password always keeps working: the fingerprint is only tried before it."))
+            "Your password always keeps working: the fingerprint and the face are only tried before it. "
+            "Face unlock uses an infrared camera; a photo can't fool it, but treat it as a convenience, not a lock for sensitive things."))
         self.note.add_css_class("dim-label")
         for w in (self.info, buttons, self.note):
             box.append(w)
@@ -1083,11 +1128,18 @@ class AuthPage(SchemaPage):
         finger = st.get("fingerprint", {})
         lines = [_("Fingerprint: ") + (_("reader found") if finger.get("hardware") else _("no reader found"))
                  + ("" if finger.get("installed") else _(" (fprintd not installed)"))]
+        face = st.get("face", {})
+        lines.append(_("Face: ") + (_("infrared camera found") if face.get("cameras") else _("no infrared camera found"))
+                     + ("" if face.get("installed") else _(" (Howdy not installed)")))
         if st.get("pending"):
             lines.append(_("Changes not applied yet: press Apply (asks for your password)."))
         self.info.set_label("\n".join(lines))
         self.btn["install"].set_visible(not finger.get("installed"))
         self.btn["fingerprint"].set_visible(bool(finger.get("hardware") and finger.get("installed")))
+        cams = face.get("cameras") or []
+        self.btn["install_face"].set_visible(bool(cams) and not face.get("installed"))
+        self.btn["camera"].set_visible(bool(cams) and bool(face.get("installed")) and face.get("device") not in cams)
+        self.btn["face"].set_visible(bool(cams) and bool(face.get("installed")) and face.get("device") in cams)
         self.btn["apply"].set_sensitive(bool(st.get("pending")))
         try:
             self.update(self.win.client.get_all()[self.section])
@@ -1106,6 +1158,20 @@ class AuthPage(SchemaPage):
 
     def _fingerprint(self, _b) -> None:
         self._run("fprintd-enroll")
+
+    def _install_face(self, _b) -> None:
+        # Howdy is in the AUR: build it with whatever helper there is
+        self._run("yay -S --needed howdy-git || paru -S --needed howdy-git")
+
+    def _camera(self, _b) -> None:
+        from . import auth
+        cams = (self.state.get("face") or {}).get("cameras") or []
+        if cams:
+            self._pkexec(auth.face_setup_script(cams[0]), _("Howdy now uses the infrared camera"))
+
+    def _face(self, _b) -> None:
+        # it asks to look at the camera; the model is stored for this user
+        self._run("sudo howdy add")
 
     def _pkexec(self, script: str, what: str) -> None:
         from .pages.async_util import run_async
@@ -1511,21 +1577,20 @@ class PointingPage(Gtk.Box):
             device = "mouse"
 
         self.pieces = [
+            piece(SchemaPage, "scrolling", sc, [("Scrolling", ["profile", "page_keys", "page_share", "browser_scale"])]),
             piece(SchemaPage, "input.touchpad", tp,
                   [("Touchpad", ["events", "tap", "drag", "dwt", "pointer_accel"])]),
             piece(DeviceScrollPiece, "input.touchpad", tp,
                   [("", ["natural_scroll", "scroll_factor", "scroll_method"])], "touchpad"),
             TouchpadSmooth(win, "scrolling", None, sc,
-                           [("", ["touchpad_smooth", "touchpad_natural", "touchpad_speed", "touchpad_glide"]),
-                            ("~Fine-tune scrolling", ["touchpad_ramp_ms", "touchpad_smoothing"])]),
+                           [("", ["touchpad_natural", "touchpad_speed"])]),
             piece(SchemaPage, "input.touchpad", tp,
                   [("~More touchpad options", ["tap_button_map", "click_method", "drag_lock", "middle_emulation",
                                                "left_handed", "accel_profile"])]),
             piece(SchemaPage, "input.pointer", ptr, [("Mouse", ["pointer_accel", "accel_profile", "left_handed"])]),
             piece(DeviceScrollPiece, "input.pointer", ptr, [("", ["natural_scroll", "scroll_factor"])], "mouse"),
             MouseSmooth(win, "scrolling", None, sc,
-                        [("", ["mouse_smooth", "mouse_natural", "mouse_speed", "mouse_glide"]),
-                         ("~Fine-tune scrolling", ["mouse_smoothing"])]),
+                        [("", ["mouse_natural", "mouse_speed"])]),
             piece(SchemaPage, "input.pointer", ptr, [("~More mouse options", ["middle_emulation"])]),
         ]
         for p in self.pieces:
@@ -1771,6 +1836,11 @@ class MonitorMap(Gtk.DrawingArea):
         self.on_moved(positions)
 
 
+def _main_name(live: list[dict[str, Any]], primary: str) -> str:
+    from .modules.outputs import main_output
+    return main_output(live, primary)
+
+
 class OutputsPage(Page):
     TRANSFORMS = ["normal", "90", "180", "270", "flipped", "flipped-90", "flipped-180", "flipped-270"]
 
@@ -1782,6 +1852,35 @@ class OutputsPage(Page):
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         self.append(self.body)
         self.config: dict[str, Any] = {}
+        self.primary = ""
+        reset = Gtk.Button(label=_("Reset all displays…"), halign=Gtk.Align.START, css_classes=["destructive-action"],
+                           tooltip_text=_("Forget every saved display setup and start again from the monitors connected now."))
+        reset.connect("clicked", self._reset)
+        self.append(reset)
+
+    def _reset(self, _b) -> None:
+        dialog = Gtk.AlertDialog(message="Reset all displays?",
+                                 detail="Every saved display setup is deleted, including monitors that aren't connected. "
+                                        "The monitors plugged in now are set up again from scratch, side by side.",
+                                 buttons=["Cancel", "Reset"], cancel_button=0, default_button=0)
+
+        def answered(d, res):
+            try:
+                if d.choose_finish(res) != 1:
+                    return
+            except GLib.Error:
+                return
+            from .modules.outputs import fresh_config
+            try:
+                new = fresh_config(swayipc.Connection().get_outputs(), self.primary)
+            except (swayipc.IPCError, OSError):
+                return
+            self.win.set("outputs.config", new)
+        dialog.choose(self.win, None, answered)
+
+    def _make_main(self, ident: str) -> None:
+        if not self.updating and self.primary != ident:
+            self.win.set("outputs.primary", ident)
 
     def _moved(self, positions: dict[str, list[int]]) -> None:
         new = copy.deepcopy(self.config)
@@ -1808,6 +1907,7 @@ class OutputsPage(Page):
         self.updating = True
         try:
             self.config = values["config"]
+            self.primary = values.get("primary", "")
             child = self.body.get_first_child()
             while child:
                 nxt = child.get_next_sibling()
@@ -1836,9 +1936,17 @@ class OutputsPage(Page):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         title = Gtk.Label(xalign=0)
         state = f"{cfg.get('name', '')} · connected" if live else "not connected"
+        if live and live.get("name") == _main_name(list(self._live().values()), self.primary):
+            state += " · main"
         title.set_markup(f"<b>{GLib.markup_escape_text(ident)}</b>  <small>{GLib.markup_escape_text(state)}</small>")
         box.append(title)
         lb = _list_box()
+
+        live_all = list(self._live().values())
+        is_main = bool(live) and live.get("name") == _main_name(live_all, self.primary)
+        main = Gtk.Switch(active=is_main, sensitive=not is_main and bool(live))
+        main.connect("notify::active", lambda s, _p: s.get_active() and self._make_main(ident))
+        lb.append(_row("Main display", main))
 
         sw = Gtk.Switch(active=cfg["enabled"])
         sw.connect("notify::active", lambda s, _p: self._set(ident, "enabled", s.get_active()))
@@ -1878,18 +1986,27 @@ class OutputsPage(Page):
 class ListPage(SchemaPage):
     """A schema page (for any scalar keys) plus an editable list setting."""
     list_key = ""
+    fold_list = ""   # a title: the list and its controls wait behind it (for a list few people need)
 
     def __init__(self, win, section, title, keys):
         super().__init__(win, section, title, keys)
         self.items: list[dict[str, Any]] = []
         self.add_row = self.build_add_row()
-        self.append(self.add_row)
         self.search = Gtk.SearchEntry(placeholder_text="Filter")
         self.search.connect("search-changed", lambda _s: self.items_box.invalidate_filter())
-        self.append(self.search)
         self.items_box = _list_box()
         self.items_box.set_filter_func(self._filter)
-        self.append(_frame(self.items_box))
+        if self.fold_list:
+            inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            for w in (self.add_row, self.search, _frame(self.items_box)):
+                inner.append(w)
+            exp = Gtk.Expander(label=_(self.fold_list), child=inner)
+            exp.add_css_class("heading")
+            self.append(exp)
+        else:
+            self.append(self.add_row)
+            self.append(self.search)
+            self.append(_frame(self.items_box))
 
     def _filter(self, row: Gtk.ListBoxRow) -> bool:
         text = self.search.get_text().lower()
@@ -2220,6 +2337,118 @@ class AutostartPage(ListPage):
         self.search.set_visible(len(self.items) > 8)
 
 
+class PriorityPage(ListPage):
+    """Which programs wait for which: the rules, plus what the governor is doing now."""
+    list_key = "rules"
+    fold_list = "Rules for individual programs"
+    visible_when = {
+        "focus_nice": lambda v: v["enabled"] and v["focus_boost"],
+        "focus_boost": lambda v: v["enabled"],
+        "favor_windows": lambda v: v["enabled"],
+        "background_nice": lambda v: v["enabled"],
+        "ui_nice": lambda v: v["enabled"],
+        "cpu_cap": lambda v: v["enabled"],
+        "cpu_cap_battery": lambda v: v["enabled"],
+        "gpu_guard": lambda v: v["enabled"],
+        "gpu_limit": lambda v: v["enabled"] and v["gpu_guard"],
+        "compositor_realtime": lambda v: v["enabled"],
+        "pressure_guard": lambda v: v["enabled"],
+        "pressure_cpu": lambda v: v["enabled"] and v["pressure_guard"],
+        "pressure_io": lambda v: v["enabled"] and v["pressure_guard"],
+        "interval": lambda v: v["enabled"],
+        "protect": lambda v: v["enabled"],
+    }
+    TIERS = ("ui", "interactive", "background", "batch")
+    TIER_LABELS = ("Interface (highest)", "Favored", "Background", "Heavy (lowest)")
+    FIELDS = ("name", "cmdline")
+    FIELD_LABELS = ("Program name", "Command line")
+
+    def build_add_row(self):
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box = Gtk.Box(spacing=6)
+        self.entry = Gtk.Entry(placeholder_text=_("Program name or pattern, e.g. cargo"), hexpand=True)
+        self.field_pick = Gtk.DropDown.new_from_strings([_(t) for t in self.FIELD_LABELS])
+        self.tier_pick = Gtk.DropDown.new_from_strings([_(t) for t in self.TIER_LABELS])
+        self.tier_pick.set_selected(3)
+        add = Gtk.Button(label=_("Add"))
+        add.add_css_class("suggested-action")
+        add.connect("clicked", self._add)
+        self.entry.connect("activate", self._add)
+        for w in (self.entry, self.field_pick, self.tier_pick, add):
+            box.append(w)
+        hint = Gtk.Label(label=_("Rules: the first one that matches decides. "
+                                 "Programs started by a matched program follow it."), xalign=0, wrap=True)
+        hint.add_css_class("dim-label")
+        hint.add_css_class("caption")
+        outer.append(box)
+        outer.append(hint)
+        return outer
+
+    def _add(self, _w) -> None:
+        match = self.entry.get_text().strip()
+        if not match:
+            return
+        rule = {"match": match, "field": self.FIELDS[self.field_pick.get_selected()],
+                "tier": self.TIERS[self.tier_pick.get_selected()], "enabled": True}
+        if self.win.set(f"{self.section}.rules", self.items + [rule]):
+            self.entry.set_text("")
+
+    def _change(self, index: int, **fields) -> None:
+        if getattr(self, "updating", False) or all(self.items[index].get(k) == v for k, v in fields.items()):
+            return
+        items = copy.deepcopy(self.items)
+        items[index].update(fields)
+        self.save(items)
+
+    def item_widget(self, index, item):
+        box = Gtk.Box(spacing=12)
+        sw = Gtk.Switch(active=item["enabled"], valign=Gtk.Align.CENTER)
+        sw.connect("notify::active", lambda s, _p: self._change(index, enabled=s.get_active()))
+        label = Gtk.Label(label=item["match"], xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END,
+                          tooltip_text=item["match"])
+        label.add_css_class("monospace")
+        kind = Gtk.Label(label=_(self.FIELD_LABELS[self.FIELDS.index(item["field"])]))
+        kind.add_css_class("dim-label")
+        kind.add_css_class("caption")
+        tier = Gtk.DropDown.new_from_strings([_(t) for t in self.TIER_LABELS])
+        tier.set_valign(Gtk.Align.CENTER)
+        tier.set_selected(self.TIERS.index(item["tier"]))
+        tier.connect("notify::selected", lambda d, _p: self._change(index, tier=self.TIERS[d.get_selected()]))
+        for w in (sw, label, kind, tier, self._delete_button(index)):
+            box.append(w)
+        return box
+
+    def update(self, values):
+        self.updating = True
+        try:
+            super().update(values)
+        finally:
+            self.updating = False
+        self.search.set_visible(len(self.items) > 8)
+
+    def update_status(self, status):
+        p = status.get("priority") or {}
+        if not p.get("enabled"):
+            text = _("Not running")
+        else:
+            pr = p.get("pressure") or {}
+            gpu = p.get("gpu") or {}
+            text = (f"{_('Managing')} {p.get('managed', 0)} {_('programs')} · "
+                    f"{_('Processor')} {pr.get('cpu', 0):.0f}% · {_('Disk')} {pr.get('io', 0):.0f}%")
+            if gpu.get("busy") is not None:
+                text += f" · {_('GPU')} {gpu['busy']}%"
+                if gpu.get("held_back"):
+                    text += f" ({gpu['held_back']} {_('held back')})"
+            if p.get("capped"):
+                text += f" · {p['capped']} {_('capped')}"
+            if p.get("guard_engaged"):
+                text += " — " + _("Struggling: background work is held back")
+            if p.get("error"):
+                text += " — " + p["error"]
+        self.status.set_label(text)
+        self.status.set_visible(True)
+
+
 # --- window ----------------------------------------------------------------
 
 class SettingsWindow(Adw.ApplicationWindow):
@@ -2251,7 +2480,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         outer.append(self.split)
         # not homogeneous: one wide page mustn't widen every other page
         self.stack = Gtk.Stack(hexpand=True, hhomogeneous=False,
-                               transition_type=Gtk.StackTransitionType.CROSSFADE)
+                               transition_type=Gtk.StackTransitionType.NONE)
         # light/dark text per pane follows the window and what's in it
         self.stack.connect("notify::visible-child", lambda *_: GLib.timeout_add(350, self._retag_backdrop))
         for prop in ("notify::default-width", "notify::default-height", "notify::is-active", "notify::maximized"):
@@ -2299,7 +2528,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         close.connect("clicked", lambda _b: self.error_revealer.set_reveal_child(False))
         err_box.append(close)
         err_box.add_css_class("error")
-        self.error_revealer = Gtk.Revealer(child=err_box, transition_type=Gtk.RevealerTransitionType.SLIDE_UP)
+        self.error_revealer = Gtk.Revealer(child=err_box, transition_type=Gtk.RevealerTransitionType.NONE)
         outer.append(self.error_revealer)
         self.set_content(self.toasts)
 
@@ -2420,7 +2649,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "appearance": lambda w, s, t: AppearancePage(w, s, t, keys_by_section[s]),
             "night_light": lambda w, s, t: NightLightPage(w, s, t, keys_by_section[s]),
             "location": lambda w, s, t: LocationPage(w, s, t, keys_by_section[s]),
-            "effects": lambda w, s, t: EffectsPage(w, s, t, keys_by_section[s]),
+            "effects": lambda w, s, t: EffectsPage(w, s, t, keys_by_section[s], groups=EFFECT_GROUPS),
             "auth": lambda w, s, t: AuthPage(w, s, t, keys_by_section[s]),
             "bar": lambda w, s, t: BarPage(w, s, t, keys_by_section[s]),
             "notifications": lambda w, s, t: NotificationsPage(w, s, t, keys_by_section[s]),
@@ -2431,6 +2660,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "outputs": OutputsPage,
             "keybindings": lambda w, s, t: KeybindingsPage(w, s, t, keys_by_section[s]),
             "autostart": lambda w, s, t: AutostartPage(w, s, t, keys_by_section[s]),
+            "priority": lambda w, s, t: PriorityPage(w, s, t, keys_by_section[s]),
             "keyremap": lambda w, s, t: KeyRemapPage(w, s, t, keys_by_section[s]),
             "theming": lambda w, s, t: ThemedAppsPage(w, s, t, keys_by_section[s]),
         }
@@ -2514,7 +2744,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         if "tokens" in theme:
             # this window follows the active theme too, gtk.css option or not
             from .theming import adwaita_css
-            css = adwaita_css(theme["tokens"]) + css + self._glass_css(theme, status)
+            css = adwaita_css(theme["tokens"]) + css + self._glass_css(theme, status) + self._corner_css() + self._minimal_css(theme)
             if getattr(self, "_ink", False):
                 self.add_css_class("ink-key")
             else:
@@ -2527,44 +2757,29 @@ class SettingsWindow(Adw.ApplicationWindow):
                 Gdk.Display.get_default(), self._swatch_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self._swatch_css.load_from_string(css)
 
+    def _minimal_css(self, theme: dict[str, Any]) -> str:
+        """Interface style "minimal": the window as cards on a grey page."""
+        try:
+            style = self.client.get_all()["appearance"].get("ui_style")
+        except (DaemonUnavailable, CallError, KeyError):
+            return ""
+        if style != "minimal":
+            return ""
+        from .modules.components import minimal_settings_css
+        return minimal_settings_css(bool(theme.get("dark")))
+
+    def _corner_css(self) -> str:
+        """The window's corners are the compositor's to round (swayctl-fx masks the window by
+        effects.corner_radius and squares the ones in a corner of the screen); this window draws none of
+        its own, nor libadwaita's 15 px ones."""
+        return NO_CORNERS_CSS
+
     def _glass_css(self, theme: dict[str, Any], status: dict[str, Any] | None) -> str:
-        """Liquid glass like the bar's, when it's on and swayctl-fx can put
-        glass behind windows (it does: effects sends the for_window rule)."""
+        """This window is not glass: liquid glass is for the popups only (Quick Settings, the volume
+        pill, the launcher, notifications), never an app window."""
         self._ink = False
-        features = ((status or {}).get("compositor") or {}).get("features") or []
-        if "glass-windows" not in features:
-            self._backdrop = None
-            return ""
-        try:
-            fx = self.client.get_all()["effects"]
-        except (DaemonUnavailable, CallError, KeyError):
-            return ""
-        if not fx.get("glass"):
-            self._backdrop = None
-            return ""
-        from .modules.components import adaptive_css, app_glass_css, shell_milk
-        pct = fx.get("glass_opacity", 50)
-        k = theme["tokens"]
-        if "glass-ink" in features:
-            # the compositor inks the text from what's behind (glass text auto,
-            # effects.INK_APPS): draw it in the key, ask nothing about the backdrop
-            from .modules.components import key_ink_css
-            self._backdrop = None
-            self._ink = True
-            return (app_glass_css(k, shell_milk(pct, True)) + key_ink_css(k["accent_fg"])
-                    + _settings_ink_css(k["accent_fg"]))
-        try:
-            bg = self.client.get_all()["background"]
-        except (DaemonUnavailable, CallError, KeyError):
-            bg = {}
-        # what's behind the window, for light/dark text per pane (_retag_backdrop)
-        image = str(store_config_dir() / bg["image"]) if bg.get("image") else ""
-        from .modules.components import glass_tint
-        self._backdrop = (image, bg.get("mode", "fill"), bg.get("color") or theme.get("bg", "#000000"),
-                          glass_tint(pct, True), glass_tint(pct, False))
-        # same milk + same per-pane adaptive text as the bar, Quick Settings,
-        # notifications and OSD (shell_milk / adaptive_css)
-        return app_glass_css(k, shell_milk(pct, True)) + adaptive_css(pct, k["accent"], k["accent_fg"])
+        self._backdrop = None
+        return ""
 
     def _retag_backdrop(self, *_args) -> bool:
         """Tag each pane of glass on-light / on-dark by the wallpaper behind it
@@ -2632,6 +2847,13 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.toasts.add_toast(Adw.Toast(title=text, timeout=3))
 
 
+# The window's corners are the compositor's to round. libadwaita rounds a client-decorated window by 15 px
+# on its own, so this is loaded at the highest priority (USER), which beats any selector of its.
+NO_CORNERS_CSS = (":root { --window-radius: 0px; } "
+                  "window.background, window.csd, window.csd decoration, "
+                  "window.csd:not(.maximized):not(.fullscreen):not(.tiled) decoration { border-radius: 0; }")
+
+
 class SettingsApp(Adw.Application):
     def __init__(self, page: str | None = None):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
@@ -2639,10 +2861,19 @@ class SettingsApp(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
+        # no animation of its own (page crossfades, revealers): motion is the compositor's job, and
+        # its animation settings are the ones every window follows
+        settings = Gtk.Settings.get_default()
+        if settings is not None:
+            settings.set_property("gtk-enable-animations", False)
         provider = Gtk.CssProvider()
         provider.load_from_string(CSS)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        corners = Gtk.CssProvider()
+        corners.load_from_string(NO_CORNERS_CSS)
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), corners, Gtk.STYLE_PROVIDER_PRIORITY_USER)
         # Running from a checkout: the icon isn't installed into hicolor yet.
         local_icons = Path(__file__).resolve().parent.parent / "data" / "icons"
         if local_icons.is_dir():

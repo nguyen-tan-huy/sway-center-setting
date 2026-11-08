@@ -9,15 +9,20 @@
 use crate::config::Launcher as Config;
 use crate::services::clipboard;
 use crate::services::elephant::{Elephant, Item, Msg};
-use crate::ui::{backdrop, catcher};
+use crate::ui::{backdrop, catcher, compositor_anim};
 use adw::prelude::*;
-use gtk::{gdk, glib, graphene, gsk};
+use gtk::{gdk, glib};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 pub const NAMESPACE: &str = "swayctl-launcher";
 const WIDTH: i32 = 720;
+/// How the compositor moves the launcher: fade in, drop 14 px and grow 0.96 -> 1 about the top
+/// centre (the demo's open). The pace is the compositor's own animation setting.
+const MOTION: compositor_anim::Motion = compositor_anim::Motion {
+    right: None, top: 0, min_scale: 0.96, drop: 14.0, stretch: 0.0, fade: 1.0,
+};
 const EMOJI_COLS: usize = 10;
 /// provider -> section heading, in the order sections are listed
 const SECTIONS: [(&str, &str); 6] = [
@@ -79,7 +84,6 @@ impl EntryOf for Option<Widgets> {
 }
 
 struct Widgets {
-    stage: gtk::Fixed,
     card: gtk::Box,
     entry: gtk::Text,
     mode: gtk::Label,
@@ -674,7 +678,7 @@ impl Launcher {
         });
         win.add_controller(keyc);
 
-        *self.widgets.borrow_mut() = Some(Widgets { stage: stage.clone(), card: card.clone(), entry: entry.clone(),
+        *self.widgets.borrow_mut() = Some(Widgets { card: card.clone(), entry: entry.clone(),
                                                    mode, suggest, results, sheet, scroll, keys });
         let weak = Rc::downgrade(self);
         *self.catcher.borrow_mut() = Some(catcher::open(&self.app, monitor, move || {
@@ -690,15 +694,12 @@ impl Launcher {
         self.items.borrow_mut().clear();
         self.render(None);
         self.search();
-        place(&stage, &card, 0.0);
+        if compositor_anim::supported() {
+            // the compositor springs it in, with the animation settings windows follow
+            compositor_anim::set(NAMESPACE, &MOTION);
+        }
         win.present();
         entry.grab_focus();
-        let target = {
-            let (stage, card) = (stage.clone(), card.clone());
-            adw::CallbackAnimationTarget::new(move |v| place(&stage, &card, v))
-        };
-        let anim = adw::SpringAnimation::new(&win, 0.0, 1.0, adw::SpringParams::new(0.72, 1.0, 420.0), target);
-        anim.play();
         *self.win.borrow_mut() = Some(win);
         self.follow_backdrop();
     }
@@ -711,12 +712,10 @@ impl Launcher {
         if let Some(c) = self.catcher.take() {
             c.close();
         }
-        let Some((stage, card)) = self.widgets.borrow().as_ref().map(|w| (w.stage.clone(), w.card.clone())) else { return };
-        let target = adw::CallbackAnimationTarget::new(move |v| place(&stage, &card, v));
-        let anim = adw::TimedAnimation::new(&win, 1.0, 0.0, 120, target);
-        anim.set_easing(adw::Easing::EaseInCubic);
+        // the compositor takes it away and says how long that takes; nothing moving: at once
+        let wait = compositor_anim::close(NAMESPACE).unwrap_or(std::time::Duration::ZERO);
         let weak = self.self_weak();
-        anim.connect_done(move |_| {
+        glib::timeout_add_local_once(wait, move || {
             win.close();
             if let Some(me) = weak.as_ref().and_then(|w| w.upgrade()) {
                 me.win.replace(None);
@@ -725,7 +724,6 @@ impl Launcher {
                 BACKDROP.with(|b| b.borrow_mut().take());
             }
         });
-        anim.play();
     }
 
     /// The scroller at the list's natural height, capped (a ScrolledWindow
@@ -789,21 +787,6 @@ impl Launcher {
 thread_local! {
     static SELF: RefCell<Option<std::rc::Weak<Launcher>>> = const { RefCell::new(None) };
     static BACKDROP: RefCell<Option<Rc<backdrop::Grid>>> = const { RefCell::new(None) };
-}
-
-/// Progress 0 (hidden) .. 1 (open): fade, drop 14 px, scale 0.96 -> 1 about
-/// the top centre — the demo's open.
-fn place(stage: &gtk::Fixed, card: &impl IsA<gtk::Widget>, v: f64) {
-    let v = v as f32;
-    card.set_opacity(v.clamp(0.0, 1.0) as f64);
-    let k = (1.0 - v).max(0.0);
-    let s = 1.0 - 0.04 * k;
-    let cx = WIDTH as f32 / 2.0;
-    let t = gsk::Transform::new()
-        .translate(&graphene::Point::new(cx, -14.0 * k))
-        .scale(s, s)
-        .translate(&graphene::Point::new(-cx, 0.0));
-    stage.set_child_transform(card, Some(&t));
 }
 
 fn clear(b: &gtk::Box) {

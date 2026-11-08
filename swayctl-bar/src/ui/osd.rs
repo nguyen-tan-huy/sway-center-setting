@@ -3,14 +3,20 @@
 //! fading panel near the bottom of the focused monitor.
 
 use crate::services::procs;
-use crate::ui::{backdrop, icons};
+use crate::ui::{backdrop, compositor_anim, icons};
 use adw::prelude::*;
 use gtk::{gdk, glib};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 pub const NAMESPACE: &str = "swayctl-osd";
+
+/// The look of the pill's motion: a plain fade, no scaling. The pace is the compositor's own
+/// animation setting, the one windows follow.
+const MOTION: compositor_anim::Motion = compositor_anim::Motion {
+    right: None, top: 0, min_scale: 1.0, drop: 0.0, stretch: 0.0, fade: 1.0,
+};
 
 pub struct Osd {
     win: gtk::Window,
@@ -19,9 +25,11 @@ pub struct Osd {
     value: gtk::Label,
     row: gtk::Box,
     hide: RefCell<Option<glib::SourceId>>,
-    anim: adw::TimedAnimation,
     /// the live-backdrop timer while the OSD is up
     follow: RefCell<Option<glib::SourceId>>,
+    /// the compositor is fading this out; the window goes when that ends
+    fading_out: Cell<bool>,
+    gone: RefCell<Option<glib::SourceId>>,
 }
 
 impl Osd {
@@ -51,18 +59,8 @@ impl Osd {
         row.append(&level);
         row.append(&value);
         win.set_child(Some(&row));
-        let row2 = row.clone();
-        let row = row.clone();
-        let target = adw::CallbackAnimationTarget::new(move |v| row2.set_opacity(v));
-        let anim = adw::TimedAnimation::new(&row, 0.0, 1.0, 150, target);
-        anim.set_easing(adw::Easing::EaseOutCubic);
-        let win2 = win.clone();
-        anim.connect_done(move |a| {
-            if a.is_reverse() {
-                win2.set_visible(false);
-            }
-        });
-        Rc::new(Self { win, icon, level, value, row, hide: RefCell::new(None), anim, follow: RefCell::new(None) })
+        Rc::new(Self { win, icon, level, value, row, hide: RefCell::new(None), follow: RefCell::new(None),
+                        fading_out: Cell::new(false), gone: RefCell::new(None) })
     }
 
     /// Runs one of: volume-up, volume-down, volume-mute, brightness-up, brightness-down.
@@ -101,14 +99,18 @@ impl Osd {
                     self.tag(&grid, &m);
                 }
             }
+            self.fading_out.set(false);
+            if compositor_anim::supported() {
+                compositor_anim::set(NAMESPACE, &MOTION);
+            }
             self.win.present();
             self.follow_backdrop();
-            self.anim.set_reverse(false);
-            self.anim.play();
-        } else if self.anim.is_reverse() {
+        } else if self.fading_out.replace(false) {
             // was fading out: come back
-            self.anim.set_reverse(false);
-            self.anim.play();
+            if let Some(id) = self.gone.take() {
+                id.remove();
+            }
+            compositor_anim::open(NAMESPACE);
         }
         if let Some(id) = self.hide.take() {
             id.remove();
@@ -120,8 +122,17 @@ impl Osd {
             if let Some(id) = me.follow.take() {
                 id.remove();
             }
-            me.anim.set_reverse(true);
-            me.anim.play();
+            // the compositor fades it; the window goes once that is done (at once if nothing moves)
+            let wait = compositor_anim::close(NAMESPACE).unwrap_or(std::time::Duration::ZERO);
+            me.fading_out.set(true);
+            let me2 = Rc::downgrade(&me);
+            *me.gone.borrow_mut() = Some(glib::timeout_add_local_once(wait, move || {
+                if let Some(me) = me2.upgrade() {
+                    me.gone.take();
+                    me.fading_out.set(false);
+                    me.win.set_visible(false);
+                }
+            }));
         }));
     }
 

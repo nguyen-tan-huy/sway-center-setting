@@ -1,5 +1,5 @@
 //! PAM, one thread per method. Each method has its own PAM service so they
-//! can run side by side: <prefix>password, <prefix>fingerprint.
+//! can run side by side: <prefix>password, <prefix>fingerprint, <prefix>face.
 
 use pam_client::{ConversationHandler, ErrorCode, Flag};
 use std::ffi::{CStr, CString};
@@ -9,6 +9,7 @@ use std::path::Path;
 pub enum Method {
     Password,
     Fingerprint,
+    Face,
 }
 
 impl Method {
@@ -16,6 +17,7 @@ impl Method {
         match self {
             Method::Password => "password",
             Method::Fingerprint => "fingerprint",
+            Method::Face => "face",
         }
     }
 }

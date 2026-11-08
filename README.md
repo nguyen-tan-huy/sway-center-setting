@@ -30,7 +30,11 @@ bằng giao diện, không cần biết file config nằm ở đâu.
 | `location` (riêng máy) | — | Mặc định suy từ múi giờ (`zone1970.tab`) |
 | `night_light` | wlsunset trong unit `swayctl-center-night-light.service` | Chỉ khởi động lại khi tham số đổi |
 
+| `priority` | `governor.py`, trong daemon (không gọi sway) | Giữ máy mượt khi tải nặng: build/jdtls/indexer chạy sau app đang dùng. Đặt `nice`, scheduling policy và `ionice` cho tiến trình của chính người dùng (không cần root); app đang focus được nâng tới `focus_nice`; khi PSI (CPU/đĩa) vượt ngưỡng thì việc nền lùi như build. Không đụng tiến trình real-time, kernel thread hay danh sách `protect`. Tắt hoặc thoát thì trả lại giá trị gốc. **Trần CPU** (`cpu_cap`, mặc định 75 %, 60 % khi dùng pin): việc chờ cộng lại không vượt phần CPU đó, qua slice systemd `swayctl-background.slice` (`CPUQuota`, `CPUWeight=20`) trong cây user manager, nên không cần root; chỉ chuyển được tiến trình nằm trong `user@UID.service` (không phải service, không phải scope phiên đăng nhập). **GPU guard** (`gpu_limit`, 80 %): amdgpu không chia GPU theo tiến trình, nên khi `gpu_busy_percent` vượt ngưỡng thì các app *không focus* chiếm GPU nhiều (đo bằng drm fdinfo) bị hạ xuống tầng nền |
+
 | `bar`, `notifications`, `idle`, `clipboard`, `input_method`, `polkit_agent` | unit `swayctl-center-<tên>.service`, config sinh ra trong `generated/<tên>/` | Chỉ chạy khi "managed"; không bao giờ chạy trùng với tiến trình cùng loại mà config của bạn đã bật (lần đầu tự đặt managed = false cho các thành phần đó); dừng khi sway thoát. Khi bar "managed", các `bar { }` của sway (swaybar trong config mặc định) bị ẩn bằng `bar <id> mode invisible` |
+
+`swayctl-center run-bg <lệnh>` chạy một lệnh ở mức thấp nhất (scope systemd `CPUWeight=20`, batch, nice 19, ionice idle), ví dụ `swayctl-center run-bg cargo build`. `swayctl-center doctor` kiểm tra giới hạn nice và scheduler đĩa (ionice chỉ có tác dụng với `bfq`/`mq-deadline`).
 
 Thao tác cho phím tắt: `swayctl-center action theme.toggle | night_light.toggle | night_light.warmer | night_light.cooler | lock | notifications.panel | notifications.dnd`.
 Trạng thái lúc chạy: `swayctl-center status`.

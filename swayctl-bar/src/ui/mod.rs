@@ -1,9 +1,13 @@
 pub mod bar;
+pub mod frame;
 pub mod icons;
+pub mod ipad_icons;
 pub mod osd;
 pub mod quick;
+pub mod quicklist;
 pub mod traymenu;
 pub mod notify;
 pub mod catcher;
 pub mod backdrop;
+pub mod compositor_anim;
 pub mod launcher;

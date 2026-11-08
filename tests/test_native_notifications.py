@@ -87,18 +87,6 @@ class NativeNotificationsTest(unittest.TestCase):
         c.values["effects"]["glass"] = True
         self.assertNotIn("calendar-panel", BarModule().native_css(c, themes.BUILTIN["dark"]))
 
-    def test_settings_app_glass_css(self):
-        from swayctl_center.modules.components import app_glass_css, milk_fill
-        css = app_glass_css(themes.BUILTIN["dark"].tokens, 0.50)
-        self.assertIn("background-color: transparent", css)  # the window itself is clear
-        self.assertIn(".sidebar-pane", css)
-        # direct call (no ctx): milk at 0.50 — not the glass-on thinned path
-        self.assertIn("alpha(white, 0.420), alpha(white, 0.260)", css)  # milk, not smoked surface
-        self.assertIn("label.title-2", css)                  # headings sit on glass
-        self.assertIn("#1d1d1f", css)                        # dark content on milk
-        self.assertIn("1px solid alpha(white, 0.48)", css)
-        self.assertEqual(milk_fill(0.50).count("alpha(white"), 2)
-
     def test_bar_backdrop(self):
         c = ctx()
         c.values["background"] |= {"image": "wallpapers/a.png", "mode": "fit", "color": "#102030"}
@@ -115,10 +103,11 @@ class NativeNotificationsTest(unittest.TestCase):
 
     def test_old_settings_not_shown(self):
         shown = {f"{k.section}.{k.name}" for k in schema.KEYS if not k.hidden}
-        for gone in ("appearance.light_theme", "appearance.dark_theme", "bar.theme", "bar.margin_top", "bar.layer", "effects.blur", "effects.shadows", "effects.panels",
+        for gone in ("appearance.light_theme", "appearance.dark_theme", "bar.theme", "bar.margin_top", "bar.layer", "effects.blur", "effects.panels",
                      "notifications.control_center_width", "notifications.grouping"):
             self.assertNotIn(gone, shown)
-        for kept in ("bar.position", "effects.glass", "notifications.timeout", "notifications.max_visible"):
+        for kept in ("bar.position", "effects.glass", "effects.shadows", "effects.shadow_blur_radius",
+                     "notifications.timeout", "notifications.max_visible"):
             self.assertIn(kept, shown)
 
 

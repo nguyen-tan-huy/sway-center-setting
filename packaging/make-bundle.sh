@@ -28,6 +28,15 @@ makepkg -f --noconfirm
 newest() { ls -1 "$1"/"$2"-*.pkg.tar.zst | sort -V | tail -n1; }
 out=dist/swayctl-setup
 rm -rf "$out"; mkdir -p "$out"
+# the apps from their own repos, when they are here (each built with its own makepkg)
+apps=""
+for p in "$HOME"/Downloads/Element/matrix-egui-client/tauri-app/packaging/arch/chosua \
+         "$HOME"/Git-projects/chodilamide/packaging/arch/chodilamide-ide; do
+  f=$(ls -1 "$p"-*.pkg.tar.zst 2>/dev/null | sort -V | tail -n1 || true)
+  [ -n "$f" ] && apps="$apps $f"
+done
+# shellcheck disable=SC2086
+cp $apps "$out/" 2>/dev/null || true
 cp "$(newest . swayctl-center)" "$(newest swayctl-bar swayctl-bar)" "$(newest swayctl-fx swayctl-fx)" \
    install.sh README.txt "$out/"
 tarball="dist/swayctl-setup-$(date +%Y%m%d).tar.gz"

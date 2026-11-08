@@ -64,10 +64,15 @@ impl Lock {
     }
 }
 
+/// looks at the camera before giving up on the face
+const FACE_TRIES: u32 = 4;
+
 // ---- options ------------------------------------------------------------------
 
 struct Opts {
     fingerprint: bool,
+    /// the face (Howdy's infrared camera) is asked too
+    face: bool,
     style: Option<String>,
     /// drawn blurred behind the glass (the compositor's glass can't reach a lock surface)
     wallpaper: Option<String>,
@@ -80,6 +85,7 @@ fn opts() -> Opts {
     let value = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
     Opts {
         fingerprint: args.iter().any(|a| a == "--fingerprint"),
+        face: args.iter().any(|a| a == "--face"),
         style: value("--style"),
         wallpaper: value("--wallpaper").filter(|p| std::path::Path::new(p).exists()),
         daemonize: args.iter().any(|a| a == "--daemonize"),
@@ -120,7 +126,6 @@ fn daemonize() -> Option<std::fs::File> {
 struct Ui {
     entries: RefCell<Vec<gtk::PasswordEntry>>,
     statuses: RefCell<Vec<gtk::Label>>,
-    cards: RefCell<Vec<gtk::Box>>,
     busy: Cell<bool>,
 }
 
@@ -140,23 +145,15 @@ impl Ui {
             }
         }
     }
-
-    /// Wrong password: a short horizontal shake.
-    fn shake(&self) {
-        for card in self.cards.borrow().iter() {
-            let c = card.clone();
-            let target = adw::CallbackAnimationTarget::new(move |t| {
-                let dx = ((t * std::f64::consts::PI * 6.0).sin() * 12.0 * (1.0 - t)) as i32;
-                c.set_margin_start(dx.max(0) * 2);
-                c.set_margin_end((-dx).max(0) * 2);
-            });
-            adw::TimedAnimation::new(card, 0.0, 1.0, 420, target).play();
-        }
-    }
 }
 
 fn hints(o: &Opts) -> &'static str {
-    if o.fingerprint { "Enter your password or touch the fingerprint reader" } else { "Enter your password" }
+    match (o.fingerprint, o.face) {
+        (true, true) => "Look at the camera, touch the reader or enter your password",
+        (true, false) => "Enter your password or touch the fingerprint reader",
+        (false, true) => "Look at the camera or enter your password",
+        (false, false) => "Enter your password",
+    }
 }
 
 fn build_window(app: &adw::Application, ui: &Rc<Ui>, user: &str, o: &Opts,
@@ -188,7 +185,10 @@ fn build_window(app: &adw::Application, ui: &Rc<Ui>, user: &str, o: &Opts,
     if o.fingerprint {
         methods.append(&gtk::Image::from_icon_name("auth-fingerprint-symbolic"));
     }
-    methods.set_visible(o.fingerprint);
+    if o.face {
+        methods.append(&gtk::Image::from_icon_name("camera-web-symbolic"));
+    }
+    methods.set_visible(o.fingerprint || o.face);
     for w in [time.upcast_ref::<gtk::Widget>(), date.upcast_ref(), avatar.upcast_ref(), name.upcast_ref(),
               entry.upcast_ref(), status.upcast_ref(), methods.upcast_ref()] {
         col.append(w);
@@ -215,15 +215,8 @@ fn build_window(app: &adw::Application, ui: &Rc<Ui>, user: &str, o: &Opts,
     }
     stack.add_overlay(&col);
     win.set_child(Some(&stack));
-    // fade the card in
-    col.set_opacity(0.0);
-    let c2 = col.clone();
-    let anim = adw::TimedAnimation::new(&col, 0.0, 1.0, 260, adw::CallbackAnimationTarget::new(move |v| c2.set_opacity(v)));
-    anim.set_easing(adw::Easing::EaseOutCubic);
-    win.connect_map(move |_| anim.play());
     ui.entries.borrow_mut().push(entry.clone());
     ui.statuses.borrow_mut().push(status);
-    ui.cards.borrow_mut().push(col);
     win
 }
 
@@ -262,7 +255,7 @@ fn main() -> glib::ExitCode {
             return;
         };
         let lock = Rc::new(lock);
-        let ui = Rc::new(Ui { entries: RefCell::default(), statuses: RefCell::default(), cards: RefCell::default(),
+        let ui = Rc::new(Ui { entries: RefCell::default(), statuses: RefCell::default(),
                               busy: Cell::new(false) });
         let (tx, rx) = async_channel::unbounded::<Event>();
 
@@ -295,6 +288,24 @@ fn main() -> glib::ExitCode {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(500));
+            });
+        }
+
+        // face: a few looks at the camera, then it's the password (Howdy answers within
+        // a couple of seconds; asking on and on would keep the camera lit)
+        if let Some(service) = o.face.then(|| auth::service(&o.prefix, Method::Face)).flatten() {
+            let (tx, user) = (tx.clone(), user.clone());
+            std::thread::spawn(move || {
+                for attempt in 0..FACE_TRIES {
+                    let r = auth::attempt(&service, &user, Method::Face, None, &tx);
+                    let stop = matches!(r, Event::Success(_) | Event::Failed(_, true));
+                    let last = attempt + 1 == FACE_TRIES;
+                    let _ = tx.send_blocking(if last && matches!(r, Event::Failed(_, false)) { Event::Failed(Method::Face, true) } else { r });
+                    if stop {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                }
             });
         }
 
@@ -345,9 +356,10 @@ fn main() -> glib::ExitCode {
                     Event::Failed(Method::Password, _) => {
                         ui2.set_busy(false);
                         ui2.status("Wrong password");
-                        ui2.shake();
                     }
                     Event::Failed(Method::Fingerprint, false) => ui2.status("Fingerprint not recognised - try again"),
+                    Event::Failed(Method::Face, false) => ui2.status("Face not recognised - looking again"),
+                    Event::Failed(Method::Face, true) => ui2.status("Face not recognised - enter your password"),
                     Event::Failed(_, _) => {}
                     // module messages ("Place your finger…"); the password's own are noise here
                     Event::Info(m, text) if m != Method::Password && !ui2.busy.get() => ui2.status(&text),

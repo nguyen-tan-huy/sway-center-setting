@@ -26,15 +26,13 @@ class BarStyleTest(unittest.TestCase):
         cfg = json.loads(BarModule().files(legacy_defaults()["bar"], c)["config.json"])
         self.assertEqual(cfg.get("margin-top", 0), 0)
 
-    def test_modern_is_floating_and_rounded(self):
+    def test_the_bar_is_attached_flat_and_solid_not_a_floating_pill(self):
         c = ctx(style="modern")
         t = c.theme.tokens
         files = BarModule().files(legacy_defaults()["bar"], c)
         cfg = json.loads(files["config.json"])
-        self.assertEqual((cfg["margin-top"], cfg["margin-left"], cfg["margin-right"], cfg["margin-bottom"]),
-                         (8, 8, 8, 0))
-        self.assertIn(f"background: alpha({t['surface']}, 0.88)", files["style.css"])
-        self.assertIn("border-radius: 14px", files["style.css"])
+        self.assertEqual((cfg["margin-top"], cfg["margin-left"], cfg["margin-right"], cfg["margin-bottom"]), (0, 0, 0, 0))
+
         self.assertIn(f"#battery.warning {{ color: {t['warning']}; }}", files["style.css"])
 
     def test_modern_respects_user_margins(self):
@@ -44,10 +42,12 @@ class BarStyleTest(unittest.TestCase):
         self.assertEqual(cfg["margin-bottom"], 3)
         self.assertEqual(cfg["margin-top"], 0)
 
-    def test_modern_edge_follows_position(self):
-        v = legacy_defaults()["bar"] | {"position": "left"}
-        cfg = json.loads(BarModule().files(v, ctx(style="modern"))["config.json"])
-        self.assertEqual((cfg["margin-right"], cfg["margin-left"]), (0, 8))
+    def test_the_bar_is_attached_whatever_its_position(self):
+        for pos in ("top", "bottom", "left", "right"):
+            v = legacy_defaults()["bar"] | {"position": pos}
+            cfg = json.loads(BarModule().files(v, ctx(style="modern"))["config.json"])
+            self.assertEqual((cfg["margin-top"], cfg["margin-right"], cfg["margin-bottom"], cfg["margin-left"]),
+                             (0, 0, 0, 0), pos)
 
 
 class OthersTest(unittest.TestCase):

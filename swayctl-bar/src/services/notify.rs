@@ -31,7 +31,7 @@ pub enum Image {
     Name(String),
     Path(String),
     /// width, height, rowstride, has_alpha, pixels (RGB(A), 8 bits per sample)
-    Data(i32, i32, i32, bool, Vec<u8>),
+    Data(i32, i32, i32, bool, Arc<Vec<u8>>),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -89,7 +89,7 @@ fn image_data(h: &HashMap<String, OwnedValue>) -> Option<Image> {
     };
     let (w, ht, stride) = (int(0)?, int(1)?, int(2)?);
     (w > 0 && ht > 0 && bytes.len() >= (stride * (ht - 1) + w * if alpha { 4 } else { 3 }) as usize)
-        .then(|| Image::Data(w, ht, stride, alpha, bytes))
+        .then(|| Image::Data(w, ht, stride, alpha, Arc::new(bytes)))
 }
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
@@ -288,10 +288,24 @@ impl Notifier {
         }
     }
 
+    /// Everything at once: the history changes (and its watchers rebuild) once,
+    /// not once per notification.
     pub fn clear(&self) {
-        let ids: Vec<u32> = self.history.borrow().iter().map(|n| n.id).collect();
+        let ids: Vec<u32> = {
+            let mut h = self.history.borrow_mut();
+            let ids = h.iter().map(|n| n.id).collect();
+            h.clear();
+            ids
+        };
+        if ids.is_empty() {
+            return;
+        }
+        self.bump();
         for id in ids {
-            self.close(id, Reason::Dismissed);
+            for f in self.on_close.borrow().iter() {
+                f(id);
+            }
+            self.emit("NotificationClosed", (id, Reason::Dismissed as u32));
         }
     }
 

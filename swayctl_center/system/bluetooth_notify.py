@@ -85,4 +85,7 @@ class NotifyUI:
         self._send(f"Pairing {name}", f"Type {code} on {name}, then press Enter", [], None)
 
     def cancel(self):
-        pass
+        """bluetoothd gave up on the request (the device left, it timed out):
+        its notification would only be a button that does nothing."""
+        for nid in list(self._pending):
+            self._close(nid)

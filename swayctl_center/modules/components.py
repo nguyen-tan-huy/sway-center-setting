@@ -14,14 +14,20 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import math
+import os
 import re
 import shlex
+import signal
+import time
 from pathlib import Path
 from typing import Any
 
 from .. import jsonc, owned, schema, swayconfig, swayipc, theming, themes, units
 from . import Context
+
+log = logging.getLogger(__name__)
 
 
 def _font(ctx: Context) -> tuple[str, int]:
@@ -43,7 +49,215 @@ def _glass(ctx: Context) -> bool:
     return bool(((ctx.values or {}).get("effects") or {}).get("glass"))
 
 
+def _hex_rgb(c: str) -> tuple[int, int, int]:
+    c = c.lstrip("#")
+    return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+
+
+def _luminance(c: str) -> float:
+    r, g, b = _hex_rgb(c)
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+
+
+def _mix_hex(c: str, other: str, t: float) -> str:
+    a, b = _hex_rgb(c), _hex_rgb(other)
+    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b))
+
+
+def _appearance(ctx) -> dict[str, Any]:
+    return (ctx.values or {}).get("appearance") or {}
+
+
+def _frame_color(ctx) -> str:
+    c = _appearance(ctx).get("frame_color") or "#0b1014"
+    return c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else "#0b1014"
+
+
+def frame_css(ctx) -> str:
+    """Interface style "frame": the bar is the top edge of a solid colour that also fills the
+    space around and between the windows (background.py sets the output to the same colour)."""
+    if _appearance(ctx).get("ui_style") != "frame":
+        return ""
+    c = _frame_color(ctx)
+    light = _luminance(c) > 0.55
+    ink = "#111317" if light else "#ffffff"
+    dim = "alpha(#111317, 0.62)" if light else "alpha(white, 0.68)"
+    return f"""
+/* interface style: frame - one solid colour, no blur (generated) */
+window.bar.bar {{ background: {c}; border: none; border-radius: 0; box-shadow: none; color: {ink}; }}
+window.bar .module label, window.bar .module image, window.bar .clock, window.bar .status label {{ color: {ink}; text-shadow: none; }}
+window.bar .workspace:not(.focused):not(.under-drop) {{ color: {dim}; }}
+"""
+
+
+def popup_flat_css(ctx) -> str:
+    """Quick Settings, the volume/brightness pill and the launcher as plain blocks (no glass, no
+    blur) in a tone of the frame colour: a little lighter on a dark colour, a little darker on a
+    light one."""
+    ap = _appearance(ctx)
+    if ap.get("quick_surface") != "flat":
+        return ""
+    c = _frame_color(ctx)
+    light = _luminance(c) > 0.55
+    ink = "#111317" if light else "#ffffff"
+    block = _mix_hex(c, "#000000" if light else "#ffffff", 0.08 if light else 0.12)
+    track = "alpha(black, 0.14)" if light else "alpha(white, 0.18)"
+    sel = ", ".join(f".{cls}.{cls}.{cls}.{cls}.{cls}.{cls}:not(.active)" for cls in ("tile", "slider-row", "media"))
+    sheets = ("launcher-search", "launcher-results", "launcher-keys", "launcher-suggest")
+    sheet_sel = ", ".join(f".{c3}.{c3}.{c3}" for c3 in sheets)
+    sheet_text = ", ".join(f".{c3} label, .{c3} image" for c3 in sheets)
+    return f"""
+/* popups: flat blocks in the frame colour's tone, the launcher in the frame colour itself (generated) */
+.quick-panel {{ background: none; border-color: transparent; color: {ink}; }}
+{sel} {{ background: {block}; border: none; box-shadow: none; color: {ink}; }}
+.quick-panel label, .quick-panel image {{ color: {ink}; }}
+.quick-panel .tile.active label, .quick-panel .tile.active image {{ color: #ffffff; }}
+.quick-panel scale trough {{ background: {track}; }}
+/* the pages inside (Wi-Fi, sound output, power mode, power): one block, rows divided by a line */
+.quick-panel list.boxed-list.boxed-list.boxed-list {{ background: {block}; color: {ink}; border: none; box-shadow: none; }}
+.quick-panel list.boxed-list > row {{ background: none; color: {ink}; box-shadow: none; }}
+.quick-panel list.boxed-list > row:not(:first-child) {{ border-top: 1px solid alpha({ink}, 0.10); }}
+.quick-panel list.boxed-list > row.activatable:hover {{ background: alpha({ink}, 0.07); }}
+.quick-panel row .title, .quick-panel row .subtitle, .quick-panel row label, .quick-panel row image {{ color: {ink}; }}
+.quick-panel headerbar.flat.flat.flat {{ background: {block}; border-radius: 999px; box-shadow: none; margin-bottom: 8px; }}
+.quick-panel headerbar, .quick-panel headerbar label, .quick-panel headerbar image, .quick-panel headerbar button {{ color: {ink}; }}
+.quick-panel .quick-footer button.circular {{ background: {block}; color: {ink}; box-shadow: none; }}
+.quick-panel .media button {{ background: alpha({ink}, 0.14); color: {ink}; box-shadow: none; }}
+.quick-panel .notification-card, .quick-panel button.flat.pane {{ background: {block}; border: none; box-shadow: none; color: {ink}; }}
+.osd.osd.osd {{ background: {block}; border: none; box-shadow: none; color: {ink}; }}
+.osd image, .osd label {{ color: {ink}; text-shadow: none; }}
+.osd levelbar, .osd levelbar trough {{ background: {track}; }}
+{sheet_sel} {{ background: {c}; border: none; box-shadow: none; color: {ink}; }}  /* the launcher is the bar's own colour */
+{sheet_text} {{ color: {ink}; }}
+.launcher-row:hover {{ background: alpha({ink}, 0.08); }}
+.launcher-results .launcher-row.selected label, .launcher-results .launcher-row.selected image {{ color: #ffffff; }}
+"""
+
+
+def _minimal(ctx) -> bool:
+    return _appearance(ctx).get("ui_style") == "minimal"
+
+
+def minimal_palette(dark: bool) -> dict[str, str]:
+    """Interface style "minimal": a soft grey page, white (or near-black) cards, one ink colour
+    for text and for the one filled control, hairlines instead of shadows."""
+    if dark:
+        return {"page": "#0e0e10", "card": "#1b1b1e", "ink": "#f4f4f6"}
+    return {"page": "#ececef", "card": "#ffffff", "ink": "#111113"}
+
+
+def minimal_css(ctx, t) -> str:
+    """Bar, Quick Settings, OSD, notifications, tray menu and launcher as Modern Minimal cards."""
+    if not _minimal(ctx):
+        return ""
+    m = minimal_palette(bool(t.dark))
+    card, ink = m["card"], m["ink"]
+    line, soft = f"alpha({ink}, 0.08)", f"alpha({ink}, 0.055)"
+    sheets = ("launcher-search", "launcher-results", "launcher-keys", "launcher-suggest")
+    sheet_sel = ", ".join(f".{c}.{c}.{c}" for c in sheets)
+    sheet_text = ", ".join(f".{c} label, .{c} image" for c in sheets)
+    tiles = ", ".join(f".{c}.{c}.{c}:not(.active)" for c in ("tile", "slider-row", "media"))
+    return f"""
+/* interface style: minimal (generated) - the bar is the page colour (like the frame), popups are cards, hairlines, one dark accent */
+window.bar.bar {{ background: {m["page"]}; color: {ink}; border: none; border-radius: 0; box-shadow: none; }}
+window.bar .module label, window.bar .module image, window.bar .clock, window.bar .status label {{ color: {ink}; text-shadow: none; }}
+window.bar .workspace.workspace.workspace {{ border-radius: 999px; color: alpha({ink}, 0.6); }}
+window.bar .workspace.focused.focused.focused {{ background: {ink}; color: {card}; }}
+window.bar .workspace.visible.visible {{ background: {soft}; color: {ink}; }}
+window.bar .mode.mode {{ background: {ink}; color: {card}; border-radius: 999px; }}
+.quick-panel.quick-panel.quick-panel {{ background: {card}; color: {ink}; border: 1px solid {line}; border-radius: 26px; }}
+.quick-panel label, .quick-panel image {{ color: {ink}; }}
+{tiles} {{ background: {soft}; color: {ink}; border: none; box-shadow: none; }}
+.tile.tile.tile.active {{ background: {ink}; color: {card}; border: none; }}
+.quick-panel .tile.active label, .quick-panel .tile.active image {{ color: {card}; }}
+.tile .tile-more:hover, .tile .tile-main:hover {{ background: alpha({ink}, 0.07); }}
+.quick-panel .slider-row {{ border-radius: 999px; }}
+.quick-panel .media {{ border-radius: 20px; }}
+scale trough {{ background: alpha({ink}, 0.10); }}
+scale highlight {{ background: {ink}; }}
+scale slider {{ background: {card}; border: 1px solid {line}; }}
+.quick-panel list.boxed-list.boxed-list.boxed-list {{ background: {soft}; border: none; border-radius: 20px; }}
+.quick-panel list.boxed-list > row:not(:first-child) {{ border-top: 1px solid {line}; }}
+.quick-panel headerbar.flat.flat.flat {{ background: {soft}; border-radius: 999px; }}
+.quick-panel .quick-footer button.circular, .quick-panel .media button {{ background: {soft}; color: {ink}; box-shadow: none; }}
+.quick-panel .notification-card, .quick-panel button.flat.pane {{ background: {soft}; border: none; color: {ink}; }}
+.osd.osd.osd {{ background: {card}; color: {ink}; border: 1px solid {line}; box-shadow: none; }}
+.osd image, .osd label {{ color: {ink}; }}
+.osd levelbar, .osd levelbar trough {{ background: alpha({ink}, 0.10); }}
+.osd levelbar block.filled {{ background: {ink}; }}
+.notification-card.notification-card.notification-card {{ background: {card}; color: {ink}; border: 1px solid {line}; border-radius: 22px; }}
+.notification-card label, .notification-card image {{ color: {ink}; }}
+.notification-action {{ background: none; box-shadow: inset 0 0 0 1px alpha({ink}, 0.16); border-radius: 999px; }}
+.tray-menu.tray-menu {{ background: {card}; color: {ink}; border: 1px solid {line}; border-radius: 18px; }}
+.tray-menu-item:hover {{ background: {soft}; }}
+{sheet_sel} {{ background: {card}; color: {ink}; border: 1px solid {line}; box-shadow: none; }}
+{sheet_text} {{ color: {ink}; }}
+.launcher-search.launcher-search.launcher-search {{ border-radius: 999px; }}
+.launcher-results.launcher-results.launcher-results {{ border-radius: 26px; }}
+.launcher-row:hover {{ background: {soft}; }}
+.launcher-row.selected.selected, .launcher-app.selected .launcher-icon, .launcher-emoji-cell.selected {{ background: alpha({ink}, 0.08); }}
+.launcher-results .launcher-row.selected label, .launcher-results .launcher-row.selected image {{ color: {ink}; text-shadow: none; }}
+.launcher-mode {{ background: {ink}; color: {card}; }}
+.launcher-entry {{ caret-color: {ink}; }}
+"""
+
+
+def minimal_settings_css(dark: bool) -> str:
+    """The settings window in the same style: grey page, white cards with hairlines, pills, dark primary."""
+    m = minimal_palette(dark)
+    card, ink, page = m["card"], m["ink"], m["page"]
+    line, soft = f"alpha({ink}, 0.08)", f"alpha({ink}, 0.055)"
+    return f"""
+/* interface style: minimal */
+window.background {{ background: {page}; }}
+.navigation-sidebar, .sidebar-pane, .sidebar {{ background: {card}; border-radius: 22px; }}
+list.boxed-list, .card, preferencesgroup > box > list {{ background: {card}; border: 1px solid {line}; border-radius: 20px; box-shadow: none; }}
+list.boxed-list > row {{ background: none; }}
+list.boxed-list > row:not(:first-child) {{ border-top: 1px solid {line}; }}
+.navigation-sidebar > row {{ border-radius: 14px; margin: 1px 8px; }}
+.navigation-sidebar > row:selected {{ background: alpha({ink}, 0.08); color: {ink}; }}
+headerbar {{ background: none; box-shadow: none; }}
+button.suggested-action {{ background: {ink}; color: {card}; border-radius: 999px; box-shadow: none; }}
+button:not(.flat):not(.circular):not(.suggested-action):not(.destructive-action) {{ border-radius: 999px; }}
+entry, searchentry, spinbutton {{ border-radius: 999px; background: {soft}; box-shadow: none; }}
+switch:checked {{ background: {ink}; }}
+switch:checked slider {{ background: {card}; }}
+scale trough {{ background: alpha({ink}, 0.10); }}
+scale highlight {{ background: {ink}; }}
+.chip {{ border-radius: 999px; border: 1px solid alpha({ink}, 0.16); }}
+"""
+
+
 DARK_SMOKE = 0.45
+
+
+def _square(ctx) -> bool:
+    """Interface style flat / floating: no rounded corners anywhere."""
+    t = getattr(ctx, "theme", None)
+    return t is not None and t.tokens["radius_lg"] == 0
+
+
+def _panel_radius(k) -> float:
+    """Popup panel corners: the large radius plus a little (none when square)."""
+    return k["radius_lg"] + 6 if k["radius_lg"] else 0
+
+
+SQUARE_CSS = """
+/* interface style: square corners everywhere (generated) */
+window.bar, window.bar .module, window.bar .workspaces, window.bar .workspace, window.bar .clock,
+window.bar .status, window.bar .tray, window.bar .mode, window.bar .window-title,
+.quick-panel, .quick-panel headerbar, .tile, .tile button, .tile-main, .tile-more, .slider-row, .media,
+.quick-footer button, .media button, .osd, .osd levelbar, .osd levelbar trough, .osd levelbar block,
+.notification-card, .notification-action, .notification-close, .notification-image,
+.tray-menu, .tray-menu-item, .launcher-search, .launcher-results, .launcher-keys, .launcher-suggest,
+.launcher-row, .launcher-mode, .launcher-kbd, .launcher-emoji-cell, .launcher-app .launcher-icon,
+.launcher-thumb {
+  border-radius: 0;
+}
+window.bar .workspace.workspace.workspace, window.bar .ws-blob.ws-blob { border-radius: 0; }
+scale trough, scale highlight, scale slider { border-radius: 0; }
+scale slider { min-width: 10px; }
+"""
 
 
 def _glass_opacity(ctx: Context, theme=None) -> float:
@@ -80,20 +294,22 @@ def adaptive_css(pct: float, accent: str, accent_fg: str, extra_text: str = "", 
     if lens:
         return _lens_ink_css(accent_fg, extra_text)
     out = ["\n/* text that stands out on what's behind each pane */"]
-    for cls, surface, text, tint, shadow, active in (
-            ("on-dark", "#1c1c1e", "#f5f5f7", glass_tint(pct, True), "alpha(black, 0.35)", "alpha(white, 0.22)"),
-            ("on-light", "#f5f5f7", "#1d1d1f", glass_tint(pct, False), "alpha(white, 0.45)", "alpha(black, 0.12)")):
+    for cls, surface, text, tint, shadow, active, rim, inset in (
+            ("on-dark", "#1c1c1e", "#f5f5f7", glass_tint(pct, True), "alpha(black, 0.35)", "alpha(white, 0.22)",
+             "alpha(white, 0.14)", "alpha(white, 0.10)"),
+            ("on-light", "#f5f5f7", "#1d1d1f", glass_tint(pct, False), "alpha(white, 0.45)", "alpha(black, 0.12)",
+             "alpha(white, 0.55)", "alpha(white, 0.60)")):
         sel = f".{cls}.{cls}.{cls}"
         out.append(f"""
 {sel}:not(.active):not(:selected) {{
   background: linear-gradient(180deg, alpha({surface}, {min(tint * 1.25, 1):.3f}), alpha({surface}, {tint * 0.75:.3f}));
-  color: {text};
+  color: {text}; border-color: {rim}; box-shadow: inset 0 1px 0 {inset};
 }}
 .{cls} label, .{cls} image, .{cls} button, .{cls} text, .{cls} placeholder{extra_text} {{
   color: {text}; text-shadow: 0 1px 1px {shadow};
 }}
 .{cls} .workspace {{ color: alpha({text}, 0.75); }}
-.{cls} .workspace.focused {{ background: {active}; color: {text}; }}
+.{cls} .workspace.focused {{ background: {accent}; color: {accent_fg}; }}
 .{cls} scale trough, .{cls} levelbar trough {{ background: alpha(black, 0.14); }}
 .{cls} scale highlight {{ background: alpha({accent}, 0.95); }}
 .{cls} scale slider {{ background: white; }}""")
@@ -110,7 +326,6 @@ def adaptive_css(pct: float, accent: str, accent_fg: str, extra_text: str = "", 
 
 
 LENS_INK = (("on-dark", "#ffffff", "black"), ("on-light", "#111114", "white"))
-INK_EASE = "450ms cubic-bezier(0.32, 0.72, 0, 1)"
 
 
 def _halo(rgb: str, h: float) -> str:
@@ -135,9 +350,6 @@ def _lens_ink_css(accent_fg: str, extra_text: str = "") -> str:
             out.append(f"\n.{cls}.halo-{step} label, .{cls}.halo-{step} image, .{cls}.halo-{step} button {{ "
                        f"text-shadow: {_halo(halo, step / 4)}; -gtk-icon-shadow: {_halo(halo, step / 4)}; }}")
     out.append(f"""
-.on-dark, .on-light, .on-dark label, .on-light label, .on-dark image, .on-light image, .on-dark button, .on-light button {{
-  transition: color {INK_EASE}, text-shadow {INK_EASE}, -gtk-icon-shadow {INK_EASE}, background {INK_EASE};
-}}
 .workspace.focused label, .workspace.focused, .workspace.under-drop label, .workspace.under-drop, .tile.active label, .tile.active image, :selected label, :selected image {{
   color: {accent_fg}; text-shadow: 0 1px 2px alpha(black, 0.25); -gtk-icon-shadow: none;
 }}
@@ -162,13 +374,14 @@ def key_ink_css(accent_fg: str) -> str:
 window.ink-key label, window.ink-key image, window.ink-key button, window.ink-key text,
 window.ink-key placeholder, window.ink-key .workspace, window.ink-key .window-title,
 window.ink-key .tile:not(.active), window.ink-key .slider-row {{
-  color: {k}; text-shadow: none; -gtk-icon-shadow: none; transition: none;
+  color: {k}; text-shadow: none; -gtk-icon-shadow: none;
 }}
 window.ink-key .workspace label {{ color: alpha({k}, 0.78); }}
 window.ink-key .workspace.focused label, window.ink-key .workspace.focused,
 window.ink-key .workspace.under-drop label, window.ink-key .workspace.under-drop,
 window.ink-key .tile.active label, window.ink-key .tile.active image,
-window.ink-key :selected label, window.ink-key :selected image {{ color: {accent_fg}; }}
+window.ink-key :selected label, window.ink-key :selected image,
+window.ink-key .launcher-row.selected label, window.ink-key .launcher-row.selected image {{ color: {accent_fg}; }}
 """
 
 
@@ -178,7 +391,7 @@ def bar_size_css(height: int, border: float = 0, font_pt: float = 0) -> str:
     (4 px module margins, 3 px pill margins, GTK's 24 px button minimum), so
     the bar never got lower than ~34 px and a taller one just stretched the
     pills. Now each pill is the bar height less a small gap above and below,
-    and what's inside it (workspace buttons, icons) fits that. 0 = fit the
+    and what's inside it (workspace buttons, icons, text) grows or shrinks with it. 0 = fit the
     contents (no rules). `border`: the pills' border width (GTK's min-height
     is the content box: a 1.5 px glass rim adds 3 px to every pill).
     `font_pt`: the bar's font size; a bar lower than its text needs gets a
@@ -189,10 +402,13 @@ def bar_size_css(height: int, border: float = 0, font_pt: float = 0) -> str:
     gap = min(6, max(1, round(h * 0.09)))   # air above/below each pill
     pill = h - 2 * gap - math.ceil(2 * border)
     inner = max(pill - 6, 8)                # workspace buttons: .workspaces pads 2 px, a focused one has a 1 px border
-    # a line of text is ~1.3x the font's px size; it has to fit `inner`
+    # the text grows with the bar (the font size asked for at 30 px) and shrinks
+    # to fit when the bar is lower; a line of text is ~1.3x the font's px size
     font = ""
-    if font_pt and font_pt * 4 / 3 * 1.3 > inner:
-        font = f"\nwindow.bar label {{ font-size: {max(inner / 1.3, 7):.1f}px; }}"
+    icon = max(round(inner * 0.9), 10)      # status / tray icons: 16 px in the 30 px bar
+    if font_pt:
+        px = max(min(font_pt * 4 / 3 * h / 30, inner / 1.3), 7)
+        font = f"\nwindow.bar label {{ font-size: {px:.1f}px; }}"
     pills = ", ".join(f"window.bar .{c}" for c in ("workspaces", "clock", "status", "tray", "mode", "window-title"))
     return f"""
 /* bar.height = {h}px: pills {pill}px with {gap}px above and below */
@@ -205,7 +421,8 @@ window.bar .workspaces {{ padding-top: 2px; padding-bottom: 2px; min-height: {pi
 window.bar .workspace, window.bar .tray-item {{
   min-height: {inner}px; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0;
 }}
-window.bar button {{ min-height: 0; }}{font}
+window.bar button {{ min-height: 0; }}
+window.bar image {{ -gtk-icon-size: {icon}px; }}{font}
 """
 
 
@@ -279,89 +496,8 @@ MILK_TEXT = "#1d1d1f"
 # the compositor's glass is on, floor 4 % so shaped panes still draw).
 LENS_RIM = "1.5px solid alpha(white, 0.88)"
 LENS_INSET = "inset 0 1px 0 alpha(white, 0.55), inset 0 -1px 1px alpha(black, 0.10)"
-LENS_SHADOW = "0 2px 10px alpha(black, 0.14)"
 
 
-def app_glass_css(k: dict, opacity: float) -> str:
-    """swayctl-center's own window as liquid glass, like Quick Settings: the
-    window itself is clear (swayctl-fx shapes the glass by what's drawn), the
-    sidebar, every list, the header, buttons and fields are milky pills."""
-    pane = milk_fill(opacity)
-    chip = milk_fill(opacity * 0.85)
-    rim = MILK_INSET
-    edge = MILK_RIM
-    return f"""
-/* liquid glass window: nothing but the panes is drawn */
-window, window.background, toolbarview, navigation-view, navigation-split-view,
-.content-pane, scrolledwindow, viewport, stack, list, listview, .view {{
-  background: none; background-color: transparent; box-shadow: none;
-}}
-window, window.background {{ color: {MILK_TEXT}; }}
-label {{ text-shadow: none; color: {MILK_TEXT}; }}
-/* sidebar: no pane of its own, every entry is a pill of glass */
-.sidebar-pane, .sidebar-pane headerbar {{ background: none; border: none; box-shadow: none; }}
-.sidebar-pane list > row {{
-  background: {chip}; border: {edge}; border-radius: 999px; box-shadow: {rim};
-  margin: 3px 8px; min-height: 36px; color: {MILK_TEXT};
-}}
-.sidebar-pane list > row:selected {{ background: alpha({k['accent']}, 0.90); color: {k['accent_fg']}; }}
-.sidebar-pane list > row:selected label {{ text-shadow: none; color: {k['accent_fg']}; }}
-/* the group names (Connections, Devices...): plain text between the pills */
-.sidebar-pane list > row.nav-header {{ background: none; border: none; box-shadow: none; min-height: 0; }}
-headerbar {{
-  background: {pane}; border: {edge}; border-radius: 999px; box-shadow: {rim};
-  margin: 8px 8px 0 8px; min-height: 42px;
-}}
-frame, list.boxed-list, .card {{
-  background: {pane}; border: {edge}; border-radius: 18px; box-shadow: {rim};
-}}
-frame > list, frame > border {{ background: none; border: none; }}
-list > row:hover {{ background: alpha(black, 0.06); }}
-/* lists without a frame (Wi-Fi, Bluetooth, Sound pages...): one pill per row */
-list:not(.boxed-list) > row {{
-  background: {chip}; border: {edge}; border-radius: 16px; box-shadow: {rim}; margin-bottom: 6px;
-}}
-/* rows inside a framed list are the frame's (more specific than the rule above) */
-frame list:not(.boxed-list) > row, list.boxed-list > row {{
-  background: none; border: none; box-shadow: none; margin: 0; border-radius: 0;
-}}
-button:not(.flat):not(.suggested-action):not(.destructive-action), dropdown > button, menubutton > button,
-spinbutton, entry, searchentry, .linked > button {{
-  background: {chip}; border: {edge}; box-shadow: {rim}; color: {MILK_TEXT};
-}}
-button:not(.flat):not(.circular), dropdown > button, menubutton > button {{ border-radius: 999px; }}
-entry, searchentry, spinbutton {{ border-radius: 12px; }}
-button.suggested-action {{ background: alpha({k['accent']}, 0.92); border: {edge}; box-shadow: {rim}; border-radius: 999px; }}
-switch {{ border: {edge}; }}
-switch:not(:checked) {{ background: {chip}; }}
-/* macOS-style bars: accent fill on a soft dark trough */
-scale trough {{ background: alpha(black, 0.14); min-height: 12px; border-radius: 999px; border: none; }}
-scale highlight {{ background: {k['accent']}; min-height: 12px; border-radius: 999px; }}
-scale slider {{ background: white; box-shadow: 0 0 0 1px alpha(black, 0.12), 0 1px 4px alpha(black, 0.25); }}
-popover > contents, popover > arrow {{ background: {pane}; border: {edge}; }}
-toast {{ background: {pane}; border: {edge}; color: {MILK_TEXT}; }}
-/* text outside the lists (page titles, sub-headings, status lines, the
-   "More options" expanders) sits on glass too, or it floats over whatever is
-   behind the window */
-label.title-1, label.title-2, label.title-3, label.title-4, label.heading, label.status,
-label.dim-label, box > label, expander-widget > box {{
-  background: {chip}; border: {edge}; box-shadow: {rim}; border-radius: 14px; padding: 6px 12px;
-  color: {MILK_TEXT};
-}}
-expander-widget > box label.heading {{ background: none; border: none; box-shadow: none; padding: 0; }}
-frame label:not(.glass-chip), list label:not(.glass-chip), row label:not(.glass-chip), button label:not(.glass-chip), .sidebar-pane label:not(.glass-chip), headerbar label:not(.glass-chip), expander-widget label:not(.glass-chip), popover label:not(.glass-chip), entry label:not(.glass-chip), spinbutton label:not(.glass-chip), scale label:not(.glass-chip), toast label:not(.glass-chip), tooltip label:not(.glass-chip) {{
-  background: none; border: none; box-shadow: none; padding: 0;
-}}
-/* the sidebar's group names: small chips between the pills */
-.sidebar-pane list > row.nav-header label {{
-  background: {chip}; border: {edge}; border-radius: 999px; padding: 2px 10px; margin: 0 2px;
-  color: {MILK_TEXT};
-}}
-"""
-
-
-# Kept for templates/tests that still name the old dark edge; the shell's
-# glass uses MILK_RIM (bright) instead.
 GLASS_EDGE = MILK_RIM
 
 
@@ -499,6 +635,8 @@ class Component:
             suffix = unit[len(self.unit_name("")) - len(".service"):-len(".service")].lstrip("-")
             others = self.foreign(v, ctx, suffix)
             if others:
+                others = self.adopt_strays(others)
+            if others:
                 errors.append(f"{self.name}: {argv[0]} is already running outside swayctl-center "
                               f"(pid {', '.join(map(str, others))}); remove it from your sway config "
                               "or turn off \"Managed by swayctl-center\"")
@@ -507,6 +645,12 @@ class Component:
             if err:
                 errors.append(f"{self.name}: could not start {argv[0]}: {err}")
         return errors
+
+    def adopt_strays(self, pids: list[int]) -> list[int]:
+        """Copies of the program that only look like someone else's setup (a key binding started
+        one); they are ended so the managed one can run. Returns the pids that really are
+        someone else's."""
+        return pids
 
     def foreign(self, v, ctx, suffix: str | None = None) -> list[int]:
         own = self.all_units(v, ctx)
@@ -622,6 +766,47 @@ class BarModule(Component):
     def __init__(self):
         self._hidden: dict[str, str] = {}  # sway bar id -> its mode before we hid it
 
+    # `swayctl-bar osd|quick|launcher|...` forwards to the running bar; with none running it
+    # starts one instead - a bar nobody manages (and, with no --config-dir, one with no settings)
+    STRAY_SUBCOMMANDS = ("osd", "quick", "launcher", "tray-menu", "dnd")
+
+    @classmethod
+    def is_stray(cls, argv: list[str]) -> bool:
+        """Is this command line a swayctl-bar started by a key binding or a click, not the bar itself?"""
+        if not argv or Path(argv[0]).name != "swayctl-bar":
+            return False
+        rest, skip = [], False
+        for a in argv[1:]:
+            if skip:
+                skip = False
+            elif a == "--config-dir":
+                skip = True
+            elif not a.startswith("--config-dir="):
+                rest.append(a)
+        return bool(rest) and rest[0] in cls.STRAY_SUBCOMMANDS
+
+    def adopt_strays(self, pids: list[int]) -> list[int]:
+        keep = []
+        for pid in pids:
+            try:
+                argv = [a.decode() for a in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0") if a]
+            except OSError:
+                keep.append(pid)  # can't tell what it is: leave it to the caller, as before
+                continue
+            if not self.is_stray(argv):
+                keep.append(pid)
+                continue
+            log.info("bar: ending a swayctl-bar that a key binding started (pid %s: %s)", pid, " ".join(argv))
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                continue
+            for _ in range(40):  # up to 2 s for it to let go of the bar's windows and its D-Bus name
+                if not Path(f"/proc/{pid}").exists():
+                    break
+                time.sleep(0.05)
+        return keep
+
     def snapshot(self, ipc) -> dict[str, str]:
         """sway's own bars (`bar { }` in the config, e.g. the stock swaybar): {id: mode}."""
         return {bar_id: ipc.get_bar_config(bar_id).get("mode", "dock")
@@ -662,24 +847,16 @@ class BarModule(Component):
         return {"": ["waybar", "-c", str(d / "config.json"), "-s", str(d / "style.css")]}
 
     def margins(self, v, ctx) -> dict[str, int]:
-        m = {k: v[f"margin_{k}"] for k in ("top", "right", "bottom", "left")}
-        if _modern(ctx) and not any(m.values()):
-            # a floating bar, unless the user placed it themselves
-            gap = ctx.theme.tokens["gap"] if ctx.theme else 8
-            edge = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}[v["position"]]
-            m = {k: 0 if k == edge else gap for k in m}
-        return m
+        # The bar is attached to the screen edge, one flat bar like the frame style's: never a floating pill.
+        # The margin keys are hidden; values saved by older versions (8 px) must not detach it.
+        return {k: 0 for k in ("top", "right", "bottom", "left")}
 
     def shape_css(self, v, ctx, t) -> str:
-        """One bar of glass, or (the default) a piece per group."""
+        """One flat bar (the default), or a piece per group."""
         if v.get("shape", "pieces") != "single":
             return ""
-        if _glass(ctx):
-            return bar_single_css(f"alpha(white, {milk_opacity(ctx, t):.3f})", LENS_RIM, LENS_INSET)
         k = ctx.theme.tokens if ctx.theme else {}
-        if _modern(ctx):
-            return bar_single_css(milk_fill(milk_opacity(ctx, t)), MILK_RIM, MILK_INSET)
-        # classic: the bar is already one panel; only the groups go flat
+        # attached to the edge, solid, no rim and no rounding: like the frame style's bar
         return bar_single_css(k.get("surface", "@window_bg_color"), "none", "none", "0")
 
     def native_config(self, v, ctx) -> dict[str, Any]:
@@ -706,9 +883,19 @@ class BarModule(Component):
                 "modules_left": left, "modules_center": center, "modules_right": right,
                 "clock_format": strip(v["clock_format"]), "clock_format_alt": strip(v["clock_format_alt"]),
                 "settings_command": "swayctl-center ui --page {page}",
+                "icon_style": v.get("icon_style", "ipados"),
+                "frame": self.frame_config(ctx),
                 "notifications": self.notifications_config(ctx),
                 "backdrop": self.backdrop_config(ctx),
                 "launcher": self.launcher_config(ctx)}
+
+    @staticmethod
+    def frame_config(ctx) -> dict[str, Any]:
+        fx = (ctx.values or {}).get("effects") or {}
+        pct = fx.get("glass_opacity", 10)
+        return {"glass": False, "radius": fx.get("corner_radius", 12),
+                # the pane's white body: thin, but never none (shaped glass follows the alpha it reads)
+                "tint": round(max(0.04, min(0.4, pct / 100 * 0.6)), 3)}
 
     @staticmethod
     def launcher_config(ctx) -> dict[str, Any]:
@@ -732,9 +919,15 @@ class BarModule(Component):
         # the CSS paints it) lifts what the text sits on, and frost
         # (glass_blur) wipes the detail a halo has to fight — the ink pick
         # follows both, like tools/liquid-demo.html
-        return {"adaptive": True, "image": image, "mode": b.get("mode", "fill"), "color": color,
+        # no liquid glass: the theme's own colours, text included, whatever is
+        # behind (nothing to sample, no per-pane light/dark tags)
+        # a glass frame under a clear bar: the text picks light or dark from what is behind it
+        # (the wallpaper through the glass), not from the compositor's ink (the bar has no glass of its own)
+        return {"adaptive": _glass(ctx), "image": image, "mode": b.get("mode", "fill"), "color": color,
                 "tint_dark": glass_tint(pct, True), "tint_light": glass_tint(pct, False),
                 "lens": _glass(ctx), "lens_tint": round(shell_milk(pct, True), 4),
+                # without liquid glass the theme decides light or dark, like macOS' Appearance
+                "theme": "" if _glass(ctx) or not ctx.theme else ("dark" if ctx.theme.dark else "light"),
                 "frost": round(fx.get("glass_blur", 0) / 100, 3)}
 
     @staticmethod
@@ -756,20 +949,25 @@ class BarModule(Component):
         # The OSD look is the shell's look: milky white panels, dark content,
         # accent-blue bars — with or without the compositor's glass on top.
         # When glass is on, panels stay clear (glass_css paints the pills only).
-        milk = "alpha(white, 0.55)"
-        chip = "alpha(white, 0.42)"
-        rim = "alpha(white, 0.48)"
-        text = MILK_TEXT if modern else k["text"]
-        bar_bg = "none" if glass else (milk if modern else k["surface"])
-        border = f"border: 1px solid {rim};" if modern and not glass else ""
-        ws_color = f"alpha({MILK_TEXT}, 0.72)" if modern else k["text_secondary"]
+        smoked = modern and t.dark and not glass  # dark theme: smoked material, light text
+        milk = "alpha(#1c1c1e, 0.84)" if smoked else "alpha(#ececf1, 0.82)"  # no blur behind: thicker
+        chip = "alpha(white, 0.10)" if smoked else "alpha(white, 0.42)"
+        rim = "alpha(white, 0.14)" if smoked else "alpha(white, 0.48)"
+        ink = "#f5f5f7" if smoked else MILK_TEXT
+        text = ink if modern else k["text"]
+        # The bar is never glass: it is one plain material (the popups may be), whatever the glass setting
+        # (attached to the screen edge, solid, square, no rim: like the frame style's bar)
+        bar_text = k["text"]
+        bar_bg = k["surface"]
+        border = "border: none;"
+        ws_color = k["text_secondary"]
         panel_bg = "none" if glass else (milk if modern else k["surface_overlay"])
         panel_border = "transparent" if glass else (rim if modern else k["outline"])
         tile_bg = "none" if glass else (chip if modern else f"alpha({k['text']}, 0.08)")
         return f"""/* generated by swayctl-center; edits are overwritten */
 {theming.adwaita_css(t)}
 * {{ font-family: "{family}", sans-serif; font-weight: {_font_weight(ctx)}; }}
-window.bar {{ background: {bar_bg}; color: {text}; border-radius: {radius}px; {border} font-size: {size}pt; }}
+window.bar {{ background: {bar_bg}; color: {bar_text}; border-radius: 0; {border} box-shadow: none; font-size: {size}pt; }}
 .workspace, .clock, .status, .mode {{ border-radius: {k['radius_sm'] if modern else 0}px; }}
 .workspace {{ color: {ws_color}; }}
 .workspace.focused {{ background: {k['accent']}; color: {k['accent_fg']}; }}
@@ -778,21 +976,68 @@ window.bar {{ background: {bar_bg}; color: {text}; border-radius: {radius}px; {b
 .battery-percent.warning {{ color: {k['warning']}; }}
 .battery-percent.critical {{ color: {k['error']}; }}
 .quick-panel {{ background: {panel_bg}; color: {text}; border-color: {panel_border};
-  border-radius: {k['radius_lg'] + 6}px; }}
+  border-radius: {_panel_radius(k)}px; }}
 .tile {{ background: {tile_bg}; color: {text}; }}
 .tile.active {{ background: {k['accent']}; color: {k['accent_fg']}; }}
 /* OSD: milky pill, macOS-like (dark icon/percent, accent-blue bar) */
-.osd {{ background: alpha(white, 0.72); color: #1d1d1f; border-radius: 999px;
-  border: 1px solid alpha(white, 0.42); }}
-.osd image, .osd label {{ color: #1d1d1f; }}
+.osd {{ background: {"alpha(#1c1c1e, 0.78)" if smoked else "alpha(white, 0.72)"}; color: {ink}; border-radius: 999px;
+  border: 1px solid {rim}; }}
+.osd image, .osd label {{ color: {ink}; }}
 .osd label {{ font-weight: 600; font-size: 1.15em; }}
-.osd levelbar, .osd levelbar trough {{ background: alpha(black, 0.14); min-height: 12px;
+.osd levelbar, .osd levelbar trough {{ background: {"alpha(white, 0.20)" if smoked else "alpha(black, 0.14)"}; min-height: 12px;
   border-radius: 999px; border: none; }}
 .osd levelbar block.filled {{ background: {k['accent']}; min-height: 12px; border-radius: 999px; }}
 .notification-card {{ background: {panel_bg}; color: {text}; border-color: {panel_border};
-  border-radius: {k['radius_lg'] + 6 if modern else k['radius_md']}px; font-size: {size}pt; }}
+  border-radius: {_panel_radius(k) if modern else k['radius_md']}px; font-size: {size}pt; }}
 .notification-card.critical {{ border-color: {k['error']}; }}
-""" + (self.glass_css(k, milk_opacity(ctx, t)) if glass else "")
+""" + self.flat_modules_css() + (self.chips_css(smoked) if modern and not glass else "") + (self.glass_css(k, milk_opacity(ctx, t)) if glass else "") + (self.smoked_css(k) if smoked else "") + frame_css(ctx) + popup_flat_css(ctx) + minimal_css(ctx, t)
+
+    @staticmethod
+    def flat_modules_css() -> str:
+        """Without liquid glass the bar is one material (like the macOS menu bar):
+        its modules are plain text on it, not a second pane each. The class is
+        repeated to outrank the ink tags' (.on-dark / .on-light) own fills."""
+        return """
+/* one bar, flat modules (generated) */
+window.bar .module.module.module.module.module { background: none; border-color: transparent; box-shadow: none; }
+window.bar .workspaces.workspaces.workspaces.workspaces.workspaces { padding: 0 2px; }
+"""
+
+    @staticmethod
+    def chips_css(smoked: bool) -> str:
+        """Tiles, sliders and the media card as chips on the popup's material:
+        white on the light panel, a lighter smoke on the dark one. Specific enough
+        to beat the ink tags' fills."""
+        fill = "alpha(white, 0.10)" if smoked else "alpha(white, 0.78)"
+        rim = "alpha(white, 0.14)" if smoked else "alpha(black, 0.07)"
+        sel = ", ".join(f".{c}.{c}.{c}.{c}.{c}.{c}:not(.active)" for c in ("tile", "slider-row", "media"))
+        return f"""
+/* chips on the popup material (generated) */
+{sel} {{ background: {fill}; border: 1px solid {rim}; box-shadow: none; }}
+/* a menu is read over any window: nearly solid */
+.tray-menu.tray-menu {{ background: {"alpha(#1c1c1e, 0.93)" if smoked else "alpha(#f2f2f7, 0.94)"}; border: 1px solid {rim}; }}
+"""
+
+    @staticmethod
+    def smoked_css(k) -> str:
+        """The panes default.css paints milky (white fill, dark text), as smoked
+        glass for a dark theme: Quick Settings' sliders and media card, the
+        tray menu, the launcher's sheets, the notification actions."""
+        ink, fill, rim, trough = "#f5f5f7", "alpha(#1c1c1e, 0.84)", "alpha(white, 0.14)", "alpha(white, 0.20)"
+        return f"""
+/* dark theme: smoked material (generated) */
+.slider-row, .media {{ background: alpha(white, 0.10); color: {ink}; border-color: {rim}; }}
+.media-title, .tile-title {{ color: {ink}; }}
+scale trough {{ background: {trough}; }}
+.tray-menu {{ background: {fill}; color: {ink}; border: 1px solid {rim}; }}
+.tray-menu-item:hover {{ background: alpha(white, 0.10); }}
+.launcher-search, .launcher-results, .launcher-keys, .launcher-suggest {{
+  background: {fill}; color: {ink}; border-color: {rim}; box-shadow: inset 0 1px 0 alpha(white, 0.10);
+}}
+.launcher-row:hover {{ background: alpha(white, 0.08); }}
+.quick-footer button, .media button {{ color: {ink}; }}
+.notification-app, .notification-summary {{ color: {ink}; }}
+"""
 
     @staticmethod
     def adaptive_css(ctx) -> str:
@@ -808,7 +1053,7 @@ window.bar {{ background: {bar_bg}; color: {text}; border-radius: {radius}px; {b
     @staticmethod
     def glass_css(k, opacity: float = 0.08) -> str:
         """Demo precision lens (winaviation liquid-glass-demo capsule): the
-        bar and Quick Settings are clear pills — the compositor's Snell bezel
+        popups (Quick Settings, the volume pill, the launcher, notifications) are clear pills — the compositor's Snell bezel
         bends what's behind; CSS only draws a bright specular rim + soft bloom
         so the capsule reads like the demo, not a milky Tahoe panel."""
         # the pill tint follows effects.glass_opacity (milk_opacity thins it
@@ -820,13 +1065,12 @@ window.bar {{ background: {bar_bg}; color: {text}; border-radius: {radius}px; {b
         body = f"alpha(white, {opacity:.3f})"
         rim = LENS_RIM
         inset = LENS_INSET
-        shadow = LENS_SHADOW
         return f"""
 /* liquid glass: demo precision lens — clear capsules, bright specular rim */
 .osd {{
   background: {body};
   border: {rim};
-  box-shadow: {inset}, {shadow};
+  box-shadow: {inset};
   border-radius: 999px;
   color: {MILK_TEXT};
 }}
@@ -839,16 +1083,6 @@ window.bar {{ background: {bar_bg}; color: {text}; border-radius: {radius}px; {b
 .osd levelbar block.filled {{
   background: {k['accent']}; border: none; border-radius: 999px; min-height: 12px;
 }}
-/* the bar is part of the desktop: no panel, each module its own lens capsule */
-window.bar {{ background: none; border: none; box-shadow: none; }}
-.workspaces, .clock, .status, .tray, .mode, .window-title {{
-  background: {body};
-  border: {rim}; border-radius: 999px; box-shadow: {inset};
-  padding: 0 12px; margin: 3px 2px; color: {MILK_TEXT};
-}}
-.workspaces {{ padding: 2px; }}
-.workspace {{ border-radius: 999px; color: alpha({MILK_TEXT}, 0.72); }}
-.window-title {{ color: {MILK_TEXT}; }}
 /* Quick Settings: no panel; every control is its own lens capsule */
 window.quick-window, window.quick-catcher {{ background: none; background-color: transparent; }}
 .quick-panel, .quick-main, .quick-panel > box, navigation-view, navigation-view > widget,
@@ -1059,9 +1293,10 @@ scale slider {{ background: white; box-shadow: 0 0 0 1px alpha(black, 0.12), 0 1
             # same selectors the look above styles)
             return {"config.json": json.dumps(self.native_config(v, ctx), indent=2, ensure_ascii=False) + "\n",
                     "style.css": style + self.adaptive_css(ctx)
-                    + bar_size_css(v["height"], 1.5 if _glass(ctx) else 0, _font(ctx)[1])
+                    + bar_size_css(v["height"], 0, _font(ctx)[1])
                     + bar_padding_css(v.get("padding", 10))
-                    + self.shape_css(v, ctx, t)}
+                    + self.shape_css(v, ctx, t)
+                    + (SQUARE_CSS if _square(ctx) else "")}
         style = _render_template(v["style_template"], t, ctx) if v["style_template"] else self.css(ctx, t)
         return {"config.json": json.dumps(self.config(v, ctx), indent=2, ensure_ascii=False) + "\n",
                 "style.css": style}
@@ -1323,6 +1558,8 @@ def lock_command(ctx: Context) -> list[str]:
         argv = ["swayctl-lock", "--daemonize", "--style", str(ctx.data_dir / "generated" / "bar" / "style.css")]
         if a.get("fingerprint_lock"):
             argv.append("--fingerprint")
+        if a.get("face_lock"):
+            argv.append("--face")
         # blurred behind its panes of glass
         image = ((ctx.values or {}).get("background") or {}).get("image")
         if image:

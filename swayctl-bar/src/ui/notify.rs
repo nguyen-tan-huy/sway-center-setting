@@ -14,7 +14,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub const NAMESPACE: &str = "swayctl-notifications";
-const SLIDE_MS: u32 = 220;
+/// no motion of its own: a card appears and goes (the compositor animates whole surfaces only, and a
+/// card is one of many in this one)
+const SLIDE_MS: u32 = 0;
 
 struct Card {
     id: u32,
@@ -129,7 +131,7 @@ impl Popups {
         }
         let bottom = cfg.position_y == "bottom";
         let revealer = gtk::Revealer::builder()
-            .transition_type(if bottom { gtk::RevealerTransitionType::SlideUp } else { gtk::RevealerTransitionType::SlideDown })
+            .transition_type(gtk::RevealerTransitionType::None)
             .transition_duration(SLIDE_MS)
             .child(&self.card(n, &cfg))
             .build();
@@ -252,7 +254,7 @@ impl Popups {
 
     fn card(self: &Rc<Self>, n: &Notification, cfg: &config::Notifications) -> gtk::Widget {
         let id = n.id;
-        let card = build_card(n, cfg.width, true);
+        let card = build_card(n, cfg.width, true, true);
         // spacing lives inside the revealer, so it collapses with the card
         let pad = gtk::Box::builder().margin_bottom(8).build();
         if cfg.position_y == "bottom" {
@@ -288,8 +290,9 @@ pub struct CardWidgets {
     pub actions: Vec<(gtk::Button, String)>,
 }
 
-/// One notification card; also used (compact, without actions) in Quick Settings.
-pub fn build_card(n: &Notification, width: i32, full: bool) -> CardWidgets {
+/// One notification card; also used (compact) in Quick Settings. `show_actions`: show
+/// its action buttons (a pairing request has to be answered from there too).
+pub fn build_card(n: &Notification, width: i32, full: bool, show_actions: bool) -> CardWidgets {
     let root = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(6).width_request(width)
         .css_classes(["notification-card"]).build();
     match n.urgency {
@@ -332,7 +335,7 @@ pub fn build_card(n: &Notification, width: i32, full: bool) -> CardWidgets {
     root.append(&head);
     let mut actions = Vec::new();
     let buttons: Vec<_> = n.actions.iter().filter(|(k, _)| k != "default").collect();
-    if full && !buttons.is_empty() {
+    if show_actions && !buttons.is_empty() {
         let row = gtk::Box::builder().spacing(6).homogeneous(true).css_classes(["notification-actions"]).build();
         for (key, label) in buttons {
             let b = gtk::Button::builder().label(label).css_classes(["notification-action"]).build();
@@ -364,7 +367,7 @@ fn image_widget(img: &Image) -> Option<gtk::Image> {
         }
         Image::Data(w, h, stride, alpha, bytes) => {
             let fmt = if *alpha { gdk::MemoryFormat::R8g8b8a8 } else { gdk::MemoryFormat::R8g8b8 };
-            let tex = gdk::MemoryTexture::new(*w, *h, fmt, &glib::Bytes::from(bytes), *stride as usize);
+            let tex = gdk::MemoryTexture::new(*w, *h, fmt, &glib::Bytes::from(bytes.as_slice()), *stride as usize);
             gtk::Image::from_paintable(Some(&tex))
         }
     };

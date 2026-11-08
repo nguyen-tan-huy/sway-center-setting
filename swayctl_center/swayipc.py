@@ -11,6 +11,7 @@ MAGIC = b"i3-ipc"
 _HEADER = struct.Struct("<6sII")
 
 RUN_COMMAND = 0
+GET_WORKSPACES = 1
 GET_OUTPUTS = 3
 GET_TREE = 4
 GET_BAR_CONFIG = 6
@@ -90,6 +91,9 @@ class Connection:
 
     def command(self, cmd: str) -> list[dict[str, Any]]:
         return self.request(RUN_COMMAND, cmd)
+
+    def get_workspaces(self) -> list[dict[str, Any]]:
+        return self.request(GET_WORKSPACES)
 
     def get_outputs(self) -> list[dict[str, Any]]:
         return self.request(GET_OUTPUTS)

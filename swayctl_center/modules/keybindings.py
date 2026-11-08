@@ -67,6 +67,7 @@ def self_command() -> str:
     return str(local) if local.exists() else "swayctl-center"
 
 
+_WORKSPACE_RE = re.compile(r"^workspace\s+(?:number\s+)?(\d+)$")
 _SELF_RE = re.compile(r"^(exec(?:_always)?\s+)swayctl-center(?=\s|$)")
 
 
@@ -74,6 +75,9 @@ def bind(b: dict[str, Any], modifier: str) -> str:
     command = b["command"]
     if needs_runner(command):
         command = f"exec {self_command()} binding {binding_id(b)}"
+    elif _WORKSPACE_RE.match(command):
+        # Mod+N brings workspace N to the monitor in use (see wsguard.switch_commands)
+        command = f"exec {self_command()} action workspace.{_WORKSPACE_RE.match(command).group(1)}"
     else:
         command = _SELF_RE.sub(lambda m: m.group(1) + self_command(), command)
     # --no-warn: overriding a binding from the user's config is intended

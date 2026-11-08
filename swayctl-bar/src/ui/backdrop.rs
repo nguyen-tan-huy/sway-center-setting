@@ -4,7 +4,6 @@
 //! stands out over the glass there.
 
 use crate::config::Backdrop;
-use gtk::gdk_pixbuf::Pixbuf;
 use gtk::prelude::*;
 use gtk::gdk;
 
@@ -45,85 +44,7 @@ fn luminance(r: u8, g: u8, b: u8) -> f32 {
     0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
-fn parse_color(s: &str) -> f32 {
-    gdk::RGBA::parse(s).map(|c| luminance((c.red() * 255.0) as u8, (c.green() * 255.0) as u8, (c.blue() * 255.0) as u8))
-        .unwrap_or(0.0)
-}
-
 impl Grid {
-    /// The grid for a monitor of `width` x `height` (logical px); None when
-    /// adaptive text is off.
-    pub fn new(b: &Backdrop, width: i32, height: i32) -> Option<Grid> {
-        if !b.adaptive || width <= 0 || height <= 0 {
-            return None;
-        }
-        let (w, h) = (width as f32, height as f32);
-        let fill = parse_color(&b.color);
-        let mut lum = vec![fill; GW * GH];
-        let mut lmin = vec![fill; GW * GH];
-        let mut lmax = vec![fill; GW * GH];
-        // original size for the layout, a small copy for the pixels
-        let image = (!b.image.is_empty()).then(|| {
-            let (_, iw, ih) = Pixbuf::file_info(&b.image)?;
-            let small = Pixbuf::from_file_at_scale(&b.image, 320, 320, true).ok()?;
-            Some((iw as f32, ih as f32, small))
-        }).flatten();
-        if let Some((iw, ih, px)) = image {
-            let (pw, ph) = (px.width() as f32, px.height() as f32);
-            let (stride, n) = (px.rowstride() as usize, px.n_channels() as usize);
-            let bytes = px.read_pixel_bytes();
-            let data: &[u8] = &bytes;
-            for gy in 0..GH {
-                for gx in 0..GW {
-                    // 2x2 samples per cell: mean for the side pick, min/max
-                    // so the envelope still catches detail the mean would hide
-                    let mut sum = 0.0f32;
-                    let (mut lo, mut hi) = (2.0f32, -1.0f32);
-                    let mut got = 0u32;
-                    for oy in [0.25f32, 0.75] {
-                        for ox in [0.25f32, 0.75] {
-                            let (mx, my) = ((gx as f32 + ox) * w / GW as f32,
-                                            (gy as f32 + oy) * h / GH as f32);
-                            // monitor point -> point in the original image (None: not covered)
-                            let at = match b.mode.as_str() {
-                                "stretch" => Some((mx * iw / w, my * ih / h)),
-                                "fit" => {
-                                    let s = (w / iw).min(h / ih);
-                                    Some(((mx - (w - iw * s) / 2.0) / s, (my - (h - ih * s) / 2.0) / s))
-                                }
-                                "center" => Some((mx - (w - iw) / 2.0, my - (h - ih) / 2.0)),
-                                "tile" => Some((mx % iw, my % ih)),
-                                _ => {
-                                    let s = (w / iw).max(h / ih); // fill
-                                    Some(((mx - (w - iw * s) / 2.0) / s, (my - (h - ih * s) / 2.0) / s))
-                                }
-                            };
-                            let Some((ix, iy)) = at else { continue };
-                            if ix < 0.0 || iy < 0.0 || ix >= iw || iy >= ih {
-                                continue; // the background color shows there
-                            }
-                            let (sx, sy) = (((ix / iw) * pw) as usize, ((iy / ih) * ph) as usize);
-                            let o = sy.min(px.height() as usize - 1) * stride + sx.min(px.width() as usize - 1) * n;
-                            if o + 2 < data.len() {
-                                let y = luminance(data[o], data[o + 1], data[o + 2]);
-                                sum += y;
-                                lo = lo.min(y);
-                                hi = hi.max(y);
-                                got += 1;
-                            }
-                        }
-                    }
-                    if got > 0 {
-                        lum[gy * GW + gx] = sum / got as f32;
-                        lmin[gy * GW + gx] = lo;
-                        lmax[gy * GW + gx] = hi;
-                    }
-                }
-            }
-        }
-        Some(Grid { lum, lmin, lmax, gw: GW, gh: GH, width: w, height: h, local: false })
-    }
-
     /// What's on a monitor right now (taken just before a popup shows, so
     /// it's what will be behind it): the compositor's own backdrop sample
     /// over IPC, falling back to a grim screenshot on stock sway.
@@ -378,7 +299,12 @@ pub fn through_glass(stats: (f32, f32, f32), tint: f32) -> (f32, f32, f32) {
 /// the plain-milk look when glass is off.
 pub fn choose_ink(stats: (f32, f32, f32), was_dark: Option<bool>, b: &Backdrop) -> (bool, u32, u32) {
     let seen = if b.lens { through_glass(stats, b.lens_tint) } else { stats };
-    let dark = ink_dark(seen.0, was_dark);
+    let by_theme = match (b.lens, b.theme.as_str()) {
+        (false, "dark") => Some(false),
+        (false, "light") => Some(true),
+        _ => None,
+    };
+    let dark = by_theme.unwrap_or_else(|| ink_dark(seen.0, was_dark));
     let (_, step) = choose_side(stats, dark, b.tint_dark, b.tint_light);
     (dark, step, halo(seen, if b.lens { b.frost } else { 0.0 }))
 }
@@ -455,26 +381,6 @@ pub fn set_key_ink(win: &impl IsA<gtk::Widget>, on: bool) {
             child = ch.next_sibling();
             stack.push(ch);
         }
-    }
-}
-
-/// Tag each module of a bar window `on-light` / `on-dark` by what's behind it.
-/// `origin` is the window's top left on its monitor.
-pub fn tag_modules(win: &gtk::ApplicationWindow, grid: &Grid, origin: (f32, f32), backdrop: &Backdrop) {
-    let mut child = win.first_child();
-    let mut stack = Vec::new();
-    while let Some(w) = child {
-        if w.has_css_class("module") {
-            if let Some(b) = w.compute_bounds(win) {
-                let o = grid.origin(origin);
-                let st = grid.stats(o.0 + b.x(), o.1 + b.y(), b.width(), b.height());
-                let (dark, step, halo) = choose_ink(st, was_dark(&w), backdrop);
-                tag(&w, dark, step, halo);
-            }
-        } else if let Some(first) = w.first_child() {
-            stack.push(first);
-        }
-        child = w.next_sibling().or_else(|| stack.pop());
     }
 }
 

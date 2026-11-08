@@ -401,3 +401,82 @@ pub fn night_light(session: Connection) -> Rc<Watch<Option<bool>>> {
     });
     w
 }
+
+// ---- swayctl-center: performance (priority) settings --------------------------------
+
+/// What the Smooth UI tile shows and edits: the daemon's `priority` section.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Priority {
+    pub enabled: bool,
+    /// nice of the interface tier: -11 is the highest, 0 none
+    pub ui_nice: i64,
+    pub cpu_cap: i64,
+    pub gpu_guard: bool,
+    pub gpu_limit: i64,
+}
+
+impl Priority {
+    fn from_json(v: &serde_json::Value) -> Option<Self> {
+        let p = v.get("priority")?;
+        Some(Self {
+            enabled: p.get("enabled")?.as_bool()?,
+            ui_nice: p.get("ui_nice")?.as_i64()?,
+            cpu_cap: p.get("cpu_cap")?.as_i64()?,
+            gpu_guard: p.get("gpu_guard")?.as_bool()?,
+            gpu_limit: p.get("gpu_limit")?.as_i64()?,
+        })
+    }
+}
+
+async fn read_priority(session: &Connection) -> Option<Priority> {
+    let p = proxy(session, CENTER, CENTER_PATH, CENTER).await.ok()?;
+    let s: String = p.call("GetAll", &()).await.ok()?;
+    Priority::from_json(&serde_json::from_str(&s).ok()?)
+}
+
+/// Change one setting of the daemon (`path` like "priority.ui_nice", `value` JSON).
+pub fn center_set(session: Connection, path: &'static str, value: serde_json::Value) {
+    gtk::glib::spawn_future_local(async move {
+        if let Ok(p) = proxy(&session, CENTER, CENTER_PATH, CENTER).await {
+            let r: zbus::Result<()> = p.call("Set", &(path, value.to_string())).await;
+            if let Err(e) = r {
+                eprintln!("swayctl-bar: set {path}: {e}");
+            }
+        }
+    });
+}
+
+/// The performance settings, following the daemon's Changed signal (None while it isn't running).
+pub fn priority(session: Connection) -> Rc<Watch<Option<Priority>>> {
+    let w = Watch::new(None);
+    let w2 = w.clone();
+    gtk::glib::spawn_future_local(async move {
+        w2.set(read_priority(&session).await);
+        let Ok(p) = proxy(&session, CENTER, CENTER_PATH, CENTER).await else { return };
+        let Ok(mut changed) = p.receive_signal("Changed").await else { return };
+        while let Some(msg) = changed.next().await {
+            if let Ok((section, _keys)) = msg.body().deserialize::<(String, Vec<String>)>() {
+                if section == "priority" {
+                    w2.set(read_priority(&session).await);
+                }
+            }
+        }
+    });
+    w
+}
+
+#[cfg(test)]
+mod priority_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_priority_section_and_refuses_an_incomplete_one() {
+        let ok = serde_json::json!({"priority": {"enabled": true, "ui_nice": -10, "cpu_cap": 75,
+                                                  "gpu_guard": true, "gpu_limit": 80}});
+        assert_eq!(Priority::from_json(&ok),
+                   Some(Priority { enabled: true, ui_nice: -10, cpu_cap: 75, gpu_guard: true, gpu_limit: 80 }));
+        let old = serde_json::json!({"priority": {"enabled": true}});  // a daemon from before these settings
+        assert_eq!(Priority::from_json(&old), None);
+        assert_eq!(Priority::from_json(&serde_json::json!({})), None);
+    }
+}

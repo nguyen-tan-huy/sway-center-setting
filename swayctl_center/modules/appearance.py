@@ -53,6 +53,19 @@ def resolve(values: dict[str, dict[str, Any]], available: dict[str, themes.Theme
     return Resolved(available[name], variant, source, next_change, missing)
 
 
+# corner radii of the interface styles: flat and floating are square
+SQUARE = {"radius_sm": 0, "radius_md": 0, "radius_lg": 0}
+
+
+def shaped(r: Resolved, ui_style: str) -> Resolved:
+    """The resolved theme with the interface style's corners (every generated
+    stylesheet reads its radii from the theme's tokens)."""
+    if ui_style not in ("flat", "floating"):  # "floating" = an earlier name of flat
+        return r
+    import dataclasses
+    return dataclasses.replace(r, theme=dataclasses.replace(r.theme, overrides={**r.theme.overrides, **SQUARE}))
+
+
 def client_colors(t: themes.Theme) -> list[str]:
     # border, background, text, indicator, child_border
     k = t.tokens
