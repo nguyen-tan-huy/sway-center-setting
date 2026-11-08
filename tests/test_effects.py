@@ -137,10 +137,11 @@ class GlassTextTest(unittest.TestCase):
         self.assertIn("window.ink-key .launcher-row.selected label", css)
         self.assertIn("window.ink-key .launcher-row.selected image", css)
 
-    def test_key_ink_for_quick_settings_and_the_launcher_only(self):
+    def test_key_ink_for_quick_settings_the_launcher_and_notifications_only(self):
         cmds = self.cmds("dark", ["glass", "glass-shaped", "glass-text", "glass-windows", "glass-ink"])
         self.assertIn('layer_effects "swayctl-quick" "glass_text auto"', cmds)
         self.assertIn('layer_effects "swayctl-launcher" "glass_text auto"', cmds)
+        self.assertIn('layer_effects "swayctl-notifications" "glass_text auto"', cmds)
         self.assertFalse(any(c == 'layer_effects "swayctl-osd" "glass_text auto"' for c in cmds))
         # the bar and the apps are not glass: no ink to pick for them
         self.assertFalse(any('"swayctl-bar" "glass_text' in c for c in cmds))

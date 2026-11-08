@@ -108,6 +108,11 @@ impl Popups {
             win.set_margin(e, 8);
         }
         self.stack.set_spacing(0);
+        // The width is the cards' width from the very first frame. Without it the window
+        // opens at the *natural* width of its text (a long body on one line: thousands of
+        // px, off the screen) and only the later cards, in the window that exists by then,
+        // came out right. `fit` keeps the height to the cards.
+        win.set_default_size(cfg.width, -1);
         if let Some(p) = self.stack.parent() {
             if let Ok(old) = p.downcast::<gtk::Window>() {
                 old.set_child(None::<&gtk::Widget>);
@@ -155,10 +160,20 @@ impl Popups {
         if bottom { self.stack.append(&revealer) } else { self.stack.prepend(&revealer) }
         self.cards.borrow_mut().push(c.clone());
         let win = self.window();
+        // liquid glass with the compositor inking the text (swayctl-fx "glass-ink"): the cards draw
+        // their text in the key colour and nothing is read from the screen - the same as Quick
+        // Settings and the launcher
+        let ink = crate::ui::backdrop::compositor_ink();
+        crate::ui::backdrop::set_key_ink(&win, ink);
         if !win.is_visible() {
             // nothing of ours on screen yet: what's there will be behind the cards
+            // (unless the compositor inks the text itself: then nothing is read)
             let m = if cfg.output.is_empty() { crate::ui::backdrop::focused_monitor() } else { monitor(&cfg.output) };
-            self.backdrop.replace(m.and_then(|m| crate::ui::backdrop::Grid::capture(&m).map(|g| (Rc::new(g), m))));
+            self.backdrop.replace(if ink {
+                None
+            } else {
+                m.and_then(|m| crate::ui::backdrop::Grid::capture(&m).map(|g| (Rc::new(g), m)))
+            });
         }
         win.present();
         glib::idle_add_local_once(move || revealer.set_reveal_child(true));
@@ -232,6 +247,9 @@ impl Popups {
     }
 
     fn retag(&self) {
+        if crate::ui::backdrop::compositor_ink() {
+            return; // the compositor inks the text: nothing to tag
+        }
         let Some((grid, m)) = self.backdrop.borrow().clone() else { return };
         let Some(win) = self.win.borrow().clone() else { return };
         if let Some(origin) = crate::ui::backdrop::layer_origin(&m, NAMESPACE) {

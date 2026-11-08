@@ -134,7 +134,7 @@ GLASS_APP_TEXT = {SETTINGS_APP_ID: "none", "chosua": "light", PORTAL_APP_ID: "no
 # colour and the compositor inks it light or dark from what's behind the glass
 # (`glass text auto`); they ask nothing (no GET_BACKDROP) and pick nothing
 INK_APPS = (SETTINGS_APP_ID, "chosua")
-INK_LAYERS = ("swayctl-quick", "swayctl-launcher")
+INK_LAYERS = ("swayctl-quick", "swayctl-launcher", "swayctl-notifications")
 
 
 class EffectsModule:
