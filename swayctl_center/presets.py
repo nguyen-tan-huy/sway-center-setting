@@ -62,6 +62,12 @@ UI_STYLES["frame"] = {"layout": {"gaps_inner": 8, "gaps_outer": 8},
                       "effects": {"corner_radius": 12, "glass": False, "anim_open_close": True, "anim_workspace": True, "anim_move": True, "anim_quick": True, "dim_inactive": 0.06},
                       "bar": {"shape": "single", "margin_top": 0, "margin_right": 0, "margin_bottom": 0, "margin_left": 0},
                       "appearance": {"quick_surface": "flat"}}
+# glass: the whole desktop is one sheet of liquid glass over a video: the bar, the screen edges and the
+# gaps between the windows are the pane (swayctl-bar's frame, as glass); the windows sit in cut-outs of it
+UI_STYLES["glass"] = {"layout": {"gaps_inner": 14, "gaps_outer": 14},
+                      "effects": {"corner_radius": 14, "glass": True, "anim_open_close": True, "anim_workspace": True, "anim_move": True, "anim_quick": True, "dim_inactive": 0.0},
+                      "bar": {"shape": "single", "margin_top": 0, "margin_right": 0, "margin_bottom": 0, "margin_left": 0},
+                      "appearance": {"quick_surface": "auto"}}
 # minimal: Modern Minimal - the bar stays attached to its screen edge, rounded windows with wide gaps, no glass
 UI_STYLES["minimal"] = {"layout": {"gaps_inner": 12, "gaps_outer": 12},
                         "effects": {"corner_radius": 16, "glass": False, "anim_open_close": True, "anim_workspace": True, "anim_move": True, "anim_quick": True, "dim_inactive": 0.0},

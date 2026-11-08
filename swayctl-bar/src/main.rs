@@ -41,6 +41,7 @@ struct State {
     bars: RefCell<Vec<gtk::ApplicationWindow>>,
     /// the glass frame under the windows (one per monitor), when the style asks for it
     frames: RefCell<Vec<gtk::Window>>,
+    videos: RefCell<Vec<gtk::Window>>,
     /// the bars' service subscriptions, ended on each rebuild (they hold the
     /// old bars' widgets)
     bar_subs: watch::Subs,
@@ -56,6 +57,9 @@ impl State {
         for w in self.frames.take() {
             w.close();
         }
+        for w in self.videos.take() {
+            w.close();
+        }
         self.bar_subs.clear();
         let cfg = config::load(&self.dir);
         ui::backdrop::set_current(&cfg.backdrop);
@@ -68,8 +72,14 @@ impl State {
         let monitors = display.monitors();
         let mut bars = Vec::new();
         let mut frames = Vec::new();
+        let mut videos = Vec::new();
         for i in 0..monitors.n_items() {
             if let Some(m) = monitors.item(i).and_downcast::<gdk::Monitor>() {
+                if !cfg.wallpaper.video.is_empty() {
+                    let v = ui::wallpaper::build(app, &m, &cfg.wallpaper.video);
+                    v.present();
+                    videos.push(v);
+                }
                 if cfg.frame.glass {
                     let f = ui::frame::build(app, &m, &cfg, &self.svc, &self.bar_subs);
                     f.present();
@@ -82,6 +92,7 @@ impl State {
         }
         *self.bars.borrow_mut() = bars;
         *self.frames.borrow_mut() = frames;
+        *self.videos.borrow_mut() = videos;
     }
 
     /// Serve notifications or not, as the settings say.
@@ -152,7 +163,7 @@ fn main() -> glib::ExitCode {
                 launcher: ui::launcher::Launcher::new(app, &cfg.launcher),
                 dir,
                 svc,
-                bars: RefCell::new(Vec::new()), frames: RefCell::new(Vec::new()), bar_subs: Default::default(),
+                bars: RefCell::new(Vec::new()), frames: RefCell::new(Vec::new()), videos: RefCell::new(Vec::new()), bar_subs: Default::default(),
                 css,
                 _monitors: RefCell::new(Vec::new()),
             });

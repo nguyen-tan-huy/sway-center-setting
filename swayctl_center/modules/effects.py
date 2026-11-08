@@ -199,7 +199,8 @@ class EffectsModule:
         else:
             cmds += ["blur_saturation 1", "blur_brightness 1"]
         for ns in PANEL_NAMESPACES:
-            ns_glass = glass and ns in GLASS_NAMESPACES
+            desk = ((ctx.values or {}).get("appearance") or {}).get("ui_style") == "glass"
+            ns_glass = glass and (ns in GLASS_NAMESPACES or (desk and ns == FRAME_NS))
             on = v["panels"] or (ns_glass and (ns in GLASS_RADIUS or ns in SHAPED))
             if not on:
                 cmds.append(f'layer_effects "{ns}" "reset"')

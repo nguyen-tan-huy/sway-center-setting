@@ -511,7 +511,7 @@ KEYS: tuple[Key, ...] = (
     Key("appearance", "schedule", "enum", "sun", "Switch automatically", choices=("sun", "custom")),
     Key("appearance", "light_at", "str", "07:00", "Light from", pattern=HHMM_RE),
     Key("appearance", "dark_at", "str", "19:00", "Dark from", pattern=HHMM_RE),
-    Key("appearance", "ui_style", "enum", "rounded", "Interface style", choices=("flat", "floating", "rounded", "liquid", "frame", "minimal")),
+    Key("appearance", "ui_style", "enum", "rounded", "Interface style", choices=("flat", "floating", "rounded", "liquid", "glass", "frame", "minimal")),
     # frame style: the bar and the space around the windows are one solid colour, no blur
     Key("appearance", "frame_color", "str", "#0b1014", "Frame color", pattern=r"#[0-9a-fA-F]{6}"),
     # frame style: solid colour, or one pane of liquid glass over the wallpaper (the bar, the edges and the gaps)
@@ -536,6 +536,8 @@ KEYS: tuple[Key, ...] = (
     Key("background", "image", "str", "", "Wallpaper image"),
     Key("background", "mode", "enum", "fill", "Wallpaper fit",
         choices=("fill", "fit", "stretch", "center", "tile")),
+    # a video that plays as the wallpaper (the Glass desk style plays its own when this is empty)
+    Key("background", "video", "str", "", "Video wallpaper"),
     # "" = the current theme's background color
     Key("background", "color", "str", "", "Background color", pattern=f"({COLOR_RE})?"),
 
@@ -753,7 +755,8 @@ HELP: dict[str, str] = {
     "scrolling.profile": "How the touchpad and the mouse wheel scroll: off, or a glide that carries on a little, some or a lot after you stop.",
     "appearance.frame_color": "The solid colour of the bar and of the space around and between the windows (frame style).",
     "appearance.quick_surface": "Auto follows the interface style; flat draws Quick Settings, the volume pill and the launcher as plain blocks without glass or blur.",
-    "appearance.ui_style": "One look for the bar, Quick Settings, OSD, notifications, launcher and windows: square and attached, rounded with gaps, liquid glass popups, or Modern Minimal cards.",
+    "appearance.ui_style": "One look for the bar, Quick Settings, OSD, notifications, launcher and windows: square and attached, rounded with gaps, liquid glass popups, Glass desk (the whole desktop is one sheet of glass over a moving video) or Modern Minimal cards.",
+    "background.video": "A video file played muted and in a loop behind everything (needs the GStreamer plugins from gst-plugins-good and gst-libav). Leave empty for none; the Glass desk style plays a built-in one.",
     "appearance.schedule": "When automatic: follow sunrise and sunset, or your own times.",
     "appearance.gtk_css": "Also color GTK 4 / libadwaita apps with the theme (edits your gtk.css).",
     "priority.enabled": "Builds, language servers and indexers run behind the program you are using, so the desktop never stutters.",

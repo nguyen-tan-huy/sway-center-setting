@@ -27,11 +27,14 @@ VI = {
     "How the touchpad and the mouse wheel scroll: off, or a glide that carries on a little, some or a lot after you stop.":
         "Cách touchpad và con lăn chuột cuộn: tắt, hoặc trượt tiếp một chút, vừa, hay nhiều sau khi bạn dừng.",
     "Light glide": "Trượt ngắn", "Long glide": "Trượt dài",
-    "One look for the bar, Quick Settings, OSD, notifications, launcher and windows: square and attached, rounded with gaps, liquid glass popups, or Modern Minimal cards.":
-        "Một giao diện chung cho thanh bar, Cài đặt nhanh, OSD, thông báo, launcher và cửa sổ: vuông sát màn hình, bo cong có khoảng hở, popup kính lỏng, hoặc thẻ Modern Minimal.",
+    "One look for the bar, Quick Settings, OSD, notifications, launcher and windows: square and attached, rounded with gaps, liquid glass popups, Glass desk (the whole desktop is one sheet of glass over a moving video) or Modern Minimal cards.":
+        "Một giao diện chung cho thanh bar, Cài đặt nhanh, OSD, thông báo, launcher và cửa sổ: vuông sát màn hình, bo cong có khoảng hở, popup kính lỏng, Glass desk (cả màn hình là một tấm kính trên video chuyển động) hoặc thẻ Modern Minimal.",
     "Square (attached to the screen, no gaps)": "Vuông (sát màn hình, không khoảng hở)", "Square": "Vuông",
     "Rounded with gaps, no glass": "Bo cong, có khoảng hở, không kính",
     "Liquid glass popups (rounded, with gaps)": "Popup kính lỏng (bo cong, có khoảng hở)",
+    "Glass desk (one sheet of glass over a video)": "Glass desk (một tấm kính trên video)",
+    "Video wallpaper": "Video nền",
+    "A video file played muted and in a loop behind everything (needs the GStreamer plugins from gst-plugins-good and gst-libav). Leave empty for none; the Glass desk style plays a built-in one.": "Tệp video phát tắt tiếng và lặp lại phía sau mọi thứ (cần plugin GStreamer gst-plugins-good và gst-libav). Để trống nếu không dùng; kiểu Glass desk tự phát video có sẵn.",
     "Appearance": "Giao diện", "Desktop": "Màn hình nền", "Notifications": "Thông báo", "Search": "Tìm kiếm",
     "Bar": "Thanh trạng thái", "Clipboard": "Bộ nhớ tạm", "Effects": "Hiệu ứng", "Fonts": "Phông chữ",
     "Launcher": "Trình khởi chạy", "Location": "Vị trí", "Lock & Idle": "Khoá & chờ", "Night Light": "Ánh sáng đêm",

@@ -25,6 +25,7 @@ pub struct Config {
     pub icon_style: String,
     pub notifications: Notifications,
     pub frame: Frame,
+    pub wallpaper: Wallpaper,
     pub backdrop: Backdrop,
     pub launcher: Launcher,
 }
@@ -46,6 +47,14 @@ impl Default for Frame {
     fn default() -> Self {
         Self { glass: false, radius: 12.0, tint: 0.06 }
     }
+}
+
+/// A video as the wallpaper: one muted, looping layer surface per output, under everything.
+#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct Wallpaper {
+    /// absolute path of the video; empty = none
+    pub video: String,
 }
 
 /// The Spotlight-style launcher over elephant (`swayctl-bar launcher`).
@@ -162,6 +171,7 @@ impl Default for Config {
             icon_style: "ipados".into(),
             notifications: Notifications::default(),
             frame: Frame::default(),
+            wallpaper: Wallpaper::default(),
             backdrop: Backdrop::default(),
             launcher: Launcher::default(),
         }

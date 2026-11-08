@@ -1,7 +1,7 @@
 # Maintainer: huyhappy <nguyentanhuy.work@gmail.com>
 pkgname=swayctl-center
 pkgver=0.1.0
-pkgrel=107
+pkgrel=108
 pkgdesc="One settings app for sway: install it and configure sway without touching config files"
 arch=(any)
 url="https://github.com/huyhappy/swayctl-center"
@@ -45,4 +45,7 @@ package() {
   install -Dm644 data/icons/io.github.huyhappy.SwayctlCenter.Settings.png \
     "$pkgdir/usr/share/icons/hicolor/256x256/apps/io.github.huyhappy.SwayctlCenter.Settings.png"
   install -Dm644 data/50-swayctl-center.conf "$pkgdir/etc/sway/config.d/50-swayctl-center.conf"
+  # the Glass desk style's own video wallpaper
+  install -Dm644 data/wallpapers/mesh_wallpaper_v4.mp4 \
+    "$pkgdir/usr/share/swayctl-center/wallpapers/mesh_wallpaper_v4.mp4"
 }

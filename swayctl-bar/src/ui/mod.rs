@@ -11,3 +11,4 @@ pub mod catcher;
 pub mod backdrop;
 pub mod compositor_anim;
 pub mod launcher;
+pub mod wallpaper;

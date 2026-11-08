@@ -62,6 +62,7 @@ CHOICE_LABELS: dict[str, dict[str, str]] = {
                               "disabled_on_external_mouse": "Off while a mouse is plugged in"},
     "appearance.ui_style": {"flat": "Square (attached to the screen, no gaps)", "floating": "Square",
                             "rounded": "Rounded with gaps, no glass", "liquid": "Liquid glass popups (rounded, with gaps)",
+                            "glass": "Glass desk (one sheet of glass over a video)",
                             "frame": "Frame (solid bar and background around the windows)",
                             "minimal": "Modern Minimal (soft cards, hairlines, one dark accent)"},
     "bar.icon_style": {"ipados": "iPadOS", "system": "System theme"},
@@ -83,7 +84,7 @@ CHOICE_LABELS: dict[str, dict[str, str]] = {
 
 
 # choices still accepted from old settings but not offered
-HIDDEN_CHOICES = {("appearance.ui_style", c) for c in ("floating", "flat", "rounded", "frame")}  # kept for old settings; offered: liquid, minimal
+HIDDEN_CHOICES = {("appearance.ui_style", c) for c in ("floating", "flat", "rounded", "frame")}  # kept for old settings; offered: liquid, glass, minimal
 
 
 def choice_label(path: str, value: str) -> str:

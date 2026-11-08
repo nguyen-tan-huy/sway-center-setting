@@ -73,6 +73,27 @@ def _frame_color(ctx) -> str:
     return c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else "#0b1014"
 
 
+def glass_desk(ctx) -> bool:
+    """Interface style "glass": the whole desktop is one sheet of liquid glass over a video."""
+    return _appearance(ctx).get("ui_style") == "glass"
+
+
+def glass_desk_css(ctx) -> str:
+    """The bar of the glass desk: no material of its own (the glass frame under it is the pane), its
+    text white over the video, the pills' bodies gone."""
+    if not glass_desk(ctx):
+        return ""
+    return """
+/* interface style: glass desk - the bar is part of the sheet of glass (generated) */
+window.bar.bar { background: none; border: none; border-radius: 0; box-shadow: none; }
+window.bar .workspaces, window.bar .clock, window.bar .status, window.bar .tray, window.bar .mode,
+window.bar .window-title { background: none; border-color: transparent; box-shadow: none; }
+window.bar .module label, window.bar .module image, window.bar .clock, window.bar .status label,
+window.bar .window-title { color: #ffffff; text-shadow: 0 1px 2px alpha(black, 0.35); -gtk-icon-shadow: 0 1px 2px alpha(black, 0.35); }
+window.bar .workspace:not(.focused):not(.under-drop) { color: alpha(white, 0.78); }
+"""
+
+
 def frame_css(ctx) -> str:
     """Interface style "frame": the bar is the top edge of a solid colour that also fills the
     space around and between the windows (background.py sets the output to the same colour)."""
@@ -885,6 +906,7 @@ class BarModule(Component):
                 "settings_command": "swayctl-center ui --page {page}",
                 "icon_style": v.get("icon_style", "ipados"),
                 "frame": self.frame_config(ctx),
+                "wallpaper": self.wallpaper_config(ctx),
                 "notifications": self.notifications_config(ctx),
                 "backdrop": self.backdrop_config(ctx),
                 "launcher": self.launcher_config(ctx)}
@@ -893,9 +915,14 @@ class BarModule(Component):
     def frame_config(ctx) -> dict[str, Any]:
         fx = (ctx.values or {}).get("effects") or {}
         pct = fx.get("glass_opacity", 10)
-        return {"glass": False, "radius": fx.get("corner_radius", 12),
+        return {"glass": glass_desk(ctx) and _glass(ctx), "radius": fx.get("corner_radius", 12),
                 # the pane's white body: thin, but never none (shaped glass follows the alpha it reads)
                 "tint": round(max(0.04, min(0.4, pct / 100 * 0.6)), 3)}
+
+    @staticmethod
+    def wallpaper_config(ctx) -> dict[str, Any]:
+        from .background import video_path
+        return {"video": video_path(ctx.values or {}, ctx.data_dir)}
 
     @staticmethod
     def launcher_config(ctx) -> dict[str, Any]:
@@ -990,7 +1017,7 @@ window.bar {{ background: {bar_bg}; color: {bar_text}; border-radius: 0; {border
 .notification-card {{ background: {panel_bg}; color: {text}; border-color: {panel_border};
   border-radius: {_panel_radius(k) if modern else k['radius_md']}px; font-size: {size}pt; }}
 .notification-card.critical {{ border-color: {k['error']}; }}
-""" + self.flat_modules_css() + (self.chips_css(smoked) if modern and not glass else "") + (self.glass_css(k, milk_opacity(ctx, t)) if glass else "") + (self.smoked_css(k) if smoked else "") + frame_css(ctx) + popup_flat_css(ctx) + minimal_css(ctx, t)
+""" + self.flat_modules_css() + (self.chips_css(smoked) if modern and not glass else "") + (self.glass_css(k, milk_opacity(ctx, t)) if glass else "") + (self.smoked_css(k) if smoked else "") + frame_css(ctx) + glass_desk_css(ctx) + popup_flat_css(ctx) + minimal_css(ctx, t)
 
     @staticmethod
     def flat_modules_css() -> str:

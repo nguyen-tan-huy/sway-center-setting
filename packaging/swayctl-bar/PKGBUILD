@@ -2,12 +2,13 @@
 # The bar, Quick Settings and OSD for swayctl-center (Desktop > Bar > Bar program).
 pkgname=swayctl-bar
 pkgver=0.1.0
-pkgrel=47
+pkgrel=48
 pkgdesc="GPU-rendered bar with Quick Settings, notifications and OSD, and a lock screen with fingerprint unlock, for swayctl-center"
 arch=(x86_64)
 url="https://github.com/huyhappy/swayctl-center"
 license=(MIT)
-depends=(gtk4 libadwaita gtk4-layer-shell pam)
+# gst-plugins-good + gst-libav: the video wallpaper (GTK plays it through GStreamer)
+depends=(gtk4 libadwaita gtk4-layer-shell pam gst-plugins-good gst-libav)
 provides=(notification-daemon)
 makedepends=(cargo)
 optdepends=('networkmanager: Wi-Fi tile and network list'

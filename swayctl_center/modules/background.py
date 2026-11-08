@@ -17,6 +17,28 @@ from .. import schema, swayconfig, swayipc
 from . import Context
 
 WALLPAPER_DIR = "wallpapers"
+# the Glass desk's own video, installed by the package (the repo's data/ when run from a checkout)
+DEFAULT_VIDEO = "mesh_wallpaper_v4.mp4"
+_DESK_COLOR = "#1b1340"  # under the video: its deep violet, shown while it starts
+
+
+def bundled_video() -> str:
+    for d in (Path("/usr/share/swayctl-center/wallpapers"), Path(__file__).resolve().parents[2] / "data/wallpapers"):
+        if (d / DEFAULT_VIDEO).is_file():
+            return str(d / DEFAULT_VIDEO)
+    return ""
+
+
+def video_path(values: dict[str, Any], data_dir: Path) -> str:
+    """The video to play behind the desktop: the one the user chose, else the Glass desk's own."""
+    chosen = ((values.get("background") or {}).get("video") or "")
+    if chosen:
+        path = Path(chosen).expanduser()
+        path = path if path.is_absolute() else data_dir / path
+        return str(path) if path.is_file() else ""
+    if (values.get("appearance") or {}).get("ui_style") == "glass":
+        return bundled_video()
+    return ""
 _BG_RE = re.compile(r"^output\s+(\*|\"\*\")\s+(?:bg|background)\s+(.*)$")
 
 
@@ -53,6 +75,9 @@ class BackgroundModule:
                  ctx: Context | None = None) -> list[str]:
         color = v["color"] or (ctx.theme.bg if ctx is not None and ctx.theme else "#000000")
         look = ((ctx.values or {}).get("appearance") or {}) if ctx is not None else {}
+        if look.get("ui_style") == "glass" or (v.get("video") and ctx is not None):
+            # a video plays over the output (swayctl-bar); this is the colour under it
+            return [f"output * bg {_DESK_COLOR} solid_color"]
         if look.get("ui_style") == "frame":
             # the frame style: no wallpaper, the colour of the bar fills what the windows leave
             return [f"output * bg {look.get('frame_color', '#0b1014')} solid_color"]
@@ -66,7 +91,7 @@ class BackgroundModule:
         return [f"output * bg {color} solid_color"]
 
     def before_set(self, section: str, name: str, value: Any, ctx: Context) -> Any:
-        if name == "image" and isinstance(value, str) and value:
+        if name in ("image", "video") and isinstance(value, str) and value:
             return adopt_image(value, ctx.data_dir)
         return value
 
