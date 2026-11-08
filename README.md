@@ -117,6 +117,19 @@ Nút *Set up smooth scrolling* cài nó bằng pkexec (một lần) thành `sway
 dịch vụ tự đọc lại trong ~1 giây — không cần mật khẩu khi chỉnh. Khi cuộn mượt chạy, app đặt `scroll_method none`
 cho touchpad và bỏ chiều/tốc độ cuộn của sway cho chuột (tránh cuộn hai lần / đảo chiều hai lần).
 
+## Cài đặt (Arch / CachyOS)
+
+Một lệnh cài cả ba phần (settings, bar + launcher, SwayFX fork) từ bản release mới nhất trên GitHub:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nguyen-tan-huy/sway-center-setting/master/get-swayctl.sh | sh
+# thêm `-s -- --yes` để nhận mọi gói khuyến nghị mà không hỏi
+```
+
+Script tải `swayctl-setup.tar.gz`, kiểm tra `SHA256SUMS` rồi chạy `install.sh` trong gói (`pacman -U` các gói và
+kéo phụ thuộc từ repo). Sau đó đăng xuất và chọn phiên **Sway (swayctl-fx)**. Đưa bản mới lên:
+`packaging/release.sh` (build, ghi `packaging/dist/release/`, tạo release nếu có `gh`).
+
 ## Sway mới cài
 
 Với config mặc định của sway (chưa có `~/.config/sway/config`), lần chạy đầu: swaybar được ẩn và thay bằng waybar,
