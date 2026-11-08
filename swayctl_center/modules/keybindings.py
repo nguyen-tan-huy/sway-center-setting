@@ -26,6 +26,19 @@ STOCK_MENUS = (
 LAUNCHER = "exec swayctl-center action launcher.open"
 CLIPBOARD_KEYS = "$mod+Shift+v"
 CLIPBOARD = "exec swayctl-center action clipboard.history"
+# Shortcuts a fresh install gets (on sway's stock config), each only if its key is free:
+# Super+C opens ChoSua; Super+T toggles a floating terminal (foot, in the scratchpad: the
+# window is kept, so it comes back as you left it). Its `for_window` rule is in
+# data/50-swayctl-center.conf, keyed on the app id below.
+TERMINAL_APP_ID = "swayctl-term"
+CHOSUA = "exec chosua"
+DROPDOWN_TERMINAL = (f"exec sh -c 'swaymsg \"[app_id={TERMINAL_APP_ID}] scratchpad show\" || "
+                     f"foot --app-id={TERMINAL_APP_ID} sh -c \"while true; do ${{SHELL:-sh}}; done\"'")
+FRESH_INSTALL_BINDINGS = (
+    ("$mod+Shift+v", CLIPBOARD),
+    ("$mod+c", CHOSUA),
+    ("$mod+t", DROPDOWN_TERMINAL),
+)
 
 
 def resolve(keys: str, modifier: str) -> str:
@@ -135,12 +148,13 @@ class KeybindingsModule:
             if " ".join(command.split()) in STOCK_MENUS:
                 command = LAUNCHER
             bindings.append({"keys": keys, "command": command, "flags": flags})
-        # Running on sway's stock config (a fresh install): also give the
-        # clipboard history a shortcut, if its usual key is free.
-        taken = {resolve(b["keys"], modifier).lower() for b in bindings}
-        if (swayconfig.main_config_path() == swayconfig.SYSTEM_CONFIG
-                and resolve(CLIPBOARD_KEYS, modifier).lower() not in taken):
-            bindings.append({"keys": CLIPBOARD_KEYS, "command": CLIPBOARD, "flags": []})
+        # Running on sway's stock config (a fresh install): also give the clipboard history,
+        # ChoSua and the floating terminal their shortcuts, where the key is free.
+        if swayconfig.main_config_path() == swayconfig.SYSTEM_CONFIG:
+            for keys, command in FRESH_INSTALL_BINDINGS:
+                taken = {resolve(b["keys"], modifier).lower() for b in bindings}
+                if resolve(keys, modifier).lower() not in taken:
+                    bindings.append({"keys": keys, "command": command, "flags": []})
         found: dict[str, Any] = {"bindings": schema.validate_bindings(bindings)}
         if modifier in schema.lookup("keybindings", "modifier").choices:
             found["modifier"] = modifier

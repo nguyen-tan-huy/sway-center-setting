@@ -11,7 +11,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"
 tag="v$(date +%Y%m%d)-$(grep '^pkgrel=' PKGBUILD | cut -d= -f2)"
 build=1; [ "${1:-}" = "--no-build" ] && build=0
-[ $build = 1 ] && ./make-bundle.sh
+if [ $build = 1 ]; then ./make-bundle.sh; else ./make-bundle.sh --no-build; fi
 bundle=$(ls -1t dist/swayctl-setup-*.tar.gz | head -n1)
 out=dist/release; rm -rf "$out"; mkdir -p "$out"
 cp "$bundle" "$out/swayctl-setup.tar.gz"

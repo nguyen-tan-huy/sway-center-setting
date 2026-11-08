@@ -7,7 +7,8 @@ from swayctl_center import schema, swayconfig
 from tests.legacy import legacy_defaults
 from swayctl_center.modules import Context
 from swayctl_center.modules.components import BarModule, PolkitAgentModule
-from swayctl_center.modules.keybindings import CLIPBOARD, LAUNCHER, KeybindingsModule
+from swayctl_center.modules.keybindings import (CHOSUA, CLIPBOARD, DROPDOWN_TERMINAL, LAUNCHER, TERMINAL_APP_ID,
+                                                KeybindingsModule, needs_runner)
 
 STOCK = "\n".join([
     "set $mod Mod4", "set $term foot", "set $menu wmenu-run",
@@ -47,6 +48,30 @@ class StockKeybindingsTest(unittest.TestCase):
         text = STOCK + "\nbindsym $mod+Shift+v exec pavucontrol"
         self.assertEqual(import_bindings(text, swayconfig.SYSTEM_CONFIG)["$mod+Shift+v"]["command"],
                          "exec pavucontrol")
+
+
+class FreshInstallShortcutsTest(unittest.TestCase):
+    def test_super_c_opens_chosua_and_super_t_a_floating_terminal(self):
+        b = import_bindings(STOCK, swayconfig.SYSTEM_CONFIG)
+        self.assertEqual(b["$mod+c"]["command"], CHOSUA)
+        self.assertEqual(b["$mod+t"]["command"], DROPDOWN_TERMINAL)
+        self.assertIn(f"app_id={TERMINAL_APP_ID}", DROPDOWN_TERMINAL)
+        self.assertTrue(needs_runner(DROPDOWN_TERMINAL))  # quoted: bound through the runner, intact
+
+    def test_the_terminal_window_is_made_floating_by_a_rule_we_install(self):
+        conf = (Path(__file__).resolve().parents[1] / "data/50-swayctl-center.conf").read_text()
+        rule = [l for l in conf.splitlines() if l.startswith(f'for_window [app_id="{TERMINAL_APP_ID}"]')]
+        self.assertEqual(len(rule), 1)
+        for part in ("floating enable", "scratchpad show", "move position center"):
+            self.assertIn(part, rule[0])
+
+    def test_only_on_the_stock_config_and_never_over_a_used_key(self):
+        own = import_bindings(STOCK, Path("/home/u/.config/sway/config"))
+        self.assertNotIn("$mod+c", own)
+        self.assertNotIn("$mod+t", own)
+        text = STOCK + "\nbindsym $mod+t exec kitty\nbindsym $mod+c exec calc"
+        b = import_bindings(text, swayconfig.SYSTEM_CONFIG)
+        self.assertEqual((b["$mod+t"]["command"], b["$mod+c"]["command"]), ("exec kitty", "exec calc"))
 
 
 class SwayBarTest(unittest.TestCase):
