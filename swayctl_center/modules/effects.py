@@ -87,6 +87,11 @@ BOX_SHADOW_UNFIT = CARD_SURFACE + ("swayctl-quick", "swayctl-traymenu", "swayctl
 PANE_RADIUS = ("swayctl-bar", "swayctl-quick")
 
 
+def desk_style(ctx: Context | None) -> bool:
+    """Interface style "glass": the whole desktop is one sheet of glass over a video."""
+    return ((getattr(ctx, "values", None) or {}).get("appearance") or {}).get("ui_style") == "glass"
+
+
 def is_swayfx(version: dict[str, Any] | None) -> bool:
     return bool(version) and "sway_original_version" in version
 
@@ -193,14 +198,16 @@ class EffectsModule:
         if glass:
             # Demo lens (kube.io / winaviation): nearly clear, so the Snell
             # bezel stays sharp. Frost 0 = sharp backdrop; higher = frosted.
-            frost = v["glass_blur"] / 100
+            # The glass desk plays a video under everything: a frost makes the compositor blur the whole
+            # screen again for every video frame (about twice the frame time at 120 Hz, measured), so
+            # the desk is always clear glass - tools/video_glass_cost_probe.sh
+            frost = 0 if desk_style(ctx) else v["glass_blur"] / 100
             passes, radius = (0, 0) if frost <= 0 else (1 + round(2 * frost), max(1, round(5 * frost)))
             cmds += [f"blur_passes {passes}", f"blur_radius {radius}", "blur_saturation 1.4", "blur_brightness 1.08"]
         else:
             cmds += ["blur_saturation 1", "blur_brightness 1"]
         for ns in PANEL_NAMESPACES:
-            desk = ((ctx.values or {}).get("appearance") or {}).get("ui_style") == "glass"
-            ns_glass = glass and (ns in GLASS_NAMESPACES or (desk and ns == FRAME_NS))
+            ns_glass = glass and (ns in GLASS_NAMESPACES or (desk_style(ctx) and ns == FRAME_NS))
             on = v["panels"] or (ns_glass and (ns in GLASS_RADIUS or ns in SHAPED))
             if not on:
                 cmds.append(f'layer_effects "{ns}" "reset"')
@@ -247,7 +254,8 @@ class EffectsModule:
                     # rim/specular light: always part of the glass patch
                     cmds.append(f'layer_effects "{ns}" "glass_highlight {v["glass_highlight"]:g}"')
                     if "glass-blur" in fork_features(ctx.live):
-                        cmds.append(f'layer_effects "{ns}" "glass_blur {v["glass_blur"]}"')
+                        blur = 0 if desk_style(ctx) else v["glass_blur"]
+                        cmds.append(f'layer_effects "{ns}" "glass_blur {blur}"')
                     if "glass-text" in fork_features(ctx.live):
                         cmds.append(f'layer_effects "{ns}" "glass_text {self.text_on(ns, ctx)}"')
                     if "glass-tune" in fork_features(ctx.live):

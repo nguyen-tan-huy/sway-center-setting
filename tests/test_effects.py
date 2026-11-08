@@ -130,6 +130,24 @@ class GlassTextTest(unittest.TestCase):
             cmds = self.cmds(theme)
             self.assertTrue(all(c.endswith('"glass_text none"') for c in cmds if "glass_text" in c))
 
+    def test_the_glass_desk_is_clear_whatever_the_frost_is(self):
+        # a frost over a playing video makes the compositor blur the whole screen again for every frame
+        feats = ["glass", "glass-shaped", "glass-text", "glass-windows", "glass-blur", "glass-tune"]
+        live = {"sway_original_version": "x", "swayctl_features": feats}
+        values = {"appearance": {"ui_style": "glass"}}
+        ctx = Context(Path("/app"), live=live, values=values, theme=themes.BUILTIN["dark"])
+        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True, "glass_blur": 60}, None, ctx)
+        self.assertIn('layer_effects "swayctl-frame" "glass enable"', cmds)
+        self.assertIn('layer_effects "swayctl-frame" "glass_blur 0"', cmds)
+        self.assertIn('layer_effects "swayctl-quick" "glass_blur 0"', cmds)
+        self.assertIn('layer_effects "swayctl-notifications" "glass_blur 0"', cmds)
+        self.assertIn("blur_passes 0", cmds)
+        # any other style keeps the frost that was chosen
+        other = Context(Path("/app"), live=live, values={"appearance": {"ui_style": "liquid"}}, theme=themes.BUILTIN["dark"])
+        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True, "glass_blur": 60}, None, other)
+        self.assertIn('layer_effects "swayctl-quick" "glass_blur 60"', cmds)
+        self.assertNotIn("blur_passes 0", cmds)
+
     def test_the_launchers_selected_row_keeps_its_own_colour_not_the_key(self):
         from swayctl_center.modules import components
         css = components.key_ink_css("#ffffff")
