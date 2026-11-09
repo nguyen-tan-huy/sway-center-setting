@@ -225,24 +225,24 @@ class GlassTest(unittest.TestCase):
         self.assertIn('layer_effects "waybar" "reset"', cmds)  # panels off: others untouched
         # bezel + body + dispersion only on forks that speak glass-tune
         tune = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-tune"]}, glass=True)
-        self.assertIn('layer_effects "swayctl-osd" "glass_edge 21"', tune)  # 100 % of its corners
-        self.assertIn('layer_effects "swayctl-osd" "glass_thickness 90"', tune)
+        self.assertIn('layer_effects "swayctl-osd" "glass_edge 64"', tune)  # 100 % of its corners
+        self.assertIn('layer_effects "swayctl-osd" "glass_thickness 0"', tune)
         # a faint colour fringe, the one look's (no setting)
-        self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0.1"', tune)
+        self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0.03"', tune)
         self.assertFalse(any("glass_edge" in c for c in cmds))
         # bar / Quick Settings: the same Liquid glass knobs as windows…
         lens = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-shaped", "glass-tune"]}, glass=True)
         # every popup has the OSD's bezel (21): the same lens everywhere
         for ns in ("swayctl-launcher", "swayctl-quick", "swayctl-notifications", "swayctl-osd"):
-            self.assertIn(f'layer_effects "{ns}" "glass_edge 21"', lens, ns)
+            self.assertIn(f'layer_effects "{ns}" "glass_edge 64"', lens, ns)
         self.assertIn('layer_effects "swayctl-launcher" "glass_highlight 0.9"', lens)
-        self.assertIn('layer_effects "swayctl-quick" "glass_thickness 90"', lens)
+        self.assertIn('layer_effects "swayctl-quick" "glass_thickness 0"', lens)
         # …and there are no sliders: whatever an old settings file holds, every pane gets the one look
         moved = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-shaped", "glass-tune"]},
                     glass=True, glass_refraction=120, glass_thickness=300, glass_highlight=0.2,
                     glass_edge=40, glass_chroma=0.7, glass_blur=60)
         for ns in ("swayctl-launcher", "swayctl-quick", "swayctl-osd", "swayctl-notifications"):
-            for want in ("glass_refraction 50", "glass_thickness 90", "glass_highlight 0.9", "glass_edge 21", "glass_chroma 0.1"):
+            for want in ("glass_refraction 50", "glass_thickness 0", "glass_highlight 0.9", "glass_edge 64", "glass_chroma 0.03"):
                 self.assertIn(f'layer_effects "{ns}" "{want}"', moved, (ns, want))
 
     def test_glass_blur_needs_its_feature(self):

@@ -10,9 +10,9 @@ python3 -m swayctl_center daemon > /tmp/out/ps-daemon.log 2>&1 &
 sleep 2.5
 python3 -m swayctl_center set background.image /tmp/out/${WALL:-rim_grid.png} >/dev/null
 sleep 3
-L=$(python3 -c "from swayctl_center.glass import LOOK as l; print(l['refraction'], l['edge_share'], l['thickness'], l['chroma'], l['highlight'])")
+L=$(python3 -c "from swayctl_center.glass import LOOK as l; from swayctl_center.modules.effects import glass_edge; print(l['refraction'], glass_edge('swayctl-quick', l['edge_share']), l['thickness'], l['chroma'], l['highlight'])")
 set -- $L
-swaymsg 'for_window [title="pane"] "floating enable, border none, shadows disable, glass enable, glass refraction '"$1"', glass blur 0, glass highlight '"$5"', glass edge 21, glass thickness '"$3"', glass chroma '"$4"', glass text none"' >/dev/null
+swaymsg 'for_window [title="pane"] "floating enable, border none, shadows disable, glass enable, glass refraction '"$1"', glass blur 0, glass highlight '"$5"', glass edge '"$2"', glass thickness '"$3"', glass chroma '"$4"', glass text none"' >/dev/null
 cat > /tmp/pane.py <<'PY'
 import sys, gi
 gi.require_version("Gtk", "4.0")

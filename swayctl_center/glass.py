@@ -13,8 +13,8 @@ LOOK = {
     "refraction": 50,    # px of pull at the rim (the compositor holds it to what a pane can bend without folding)
     "blur": 0,           # crystal clear: a frost blurs the screen again for every frame of a video behind
     "highlight": 0.9,    # the soft light along the rim
-    "edge_share": 100,   # rim width, % of the pane's corners (effects.EDGE_CAP)
-    "thickness": 90,     # optical depth, px
-    "chroma": 0.1,       # a faint colour fringe, as on the OSD
+    "edge_share": 100,   # the rim's ceiling, % of effects.EDGE_CAP: in practice half the pane's own thickness
+    "thickness": 0,      # none: the compositor gives the glass the body its rim needs
+    "chroma": 0.03,      # a faint colour fringe, as on the OSD
     "opacity": 10,       # the pane's white body, % (thinned to the 4 % floor shaped panes need to be seen)
 }
