@@ -109,10 +109,13 @@ class NativeBarTest(unittest.TestCase):
         c.values["effects"]["glass_opacity"] = 50
         css = BarModule().files(bar(), c)["style.css"]
         self.assertIn("alpha(white, 0.100)", css)   # moves with the slider
-        self.assertIn("1.5px solid alpha(white, 0.88)", css)
         self.assertIn("#1d1d1f", css)
         self.assertIn("alpha(black, 0.14)", css)  # soft dark trough under the blue bar
-        self.assertIn("inset 0 1px 0 alpha(white, 0.55)", css)
+        # the UI draws only the shape of a pane: the rim light and the bend are the compositor's
+        glass = css[css.index("liquid glass: demo precision lens"):]
+        self.assertNotIn("1.5px solid alpha(white, 0.88)", glass)
+        self.assertNotIn("inset 0 1px 0 alpha(white, 0.55)", glass)
+        self.assertIn(".osd {\n  background: alpha(white, 0.100);\n  border: none;\n  box-shadow: none;", glass)
 
     def test_osd_keys_bound_then_released(self):
         m = BarModule()

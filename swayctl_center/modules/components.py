@@ -1082,7 +1082,8 @@ scale trough {{ background: {trough}; }}
         """Demo precision lens (winaviation liquid-glass-demo capsule): the
         popups (Quick Settings, the volume pill, the launcher, notifications) are clear pills — the compositor's Snell bezel
         bends what's behind; CSS only draws a bright specular rim + soft bloom
-        so the capsule reads like the demo, not a milky Tahoe panel."""
+        so the capsule reads like the demo, not a milky Tahoe panel. The UI draws only the SHAPE (a thin white body,
+        no border, no inner shadow): the rim light, the bend and the colour fringe are all the compositor's."""
         # the pill tint follows effects.glass_opacity (milk_opacity thins it
         # while the compositor's glass is on, floor 4 % so shaped panes draw)
         # No *outer* box-shadow on the capsules: the compositor reads this
@@ -1090,14 +1091,12 @@ scale trough {{ background: {trough}; }}
         # lingers between capsules — the shader would take the whole panel
         # box for one pane.
         body = f"alpha(white, {opacity:.3f})"
-        rim = LENS_RIM
-        inset = LENS_INSET
         return f"""
 /* liquid glass: demo precision lens — clear capsules, bright specular rim */
 .osd {{
   background: {body};
-  border: {rim};
-  box-shadow: {inset};
+  border: none;
+  box-shadow: none;
   border-radius: 999px;
   color: {MILK_TEXT};
 }}
@@ -1118,8 +1117,8 @@ window.quick-window, window.quick-catcher {{ background: none; background-color:
 .quick-panel {{ padding: 12px; }}
 .slider-row {{
   background: {body};
-  border: {rim};
-  box-shadow: {inset};
+  border: none;
+  box-shadow: none;
   border-radius: 999px; padding: 8px 16px;
   color: {MILK_TEXT};
 }}
@@ -1127,15 +1126,15 @@ window.quick-window, window.quick-catcher {{ background: none; background-color:
 /* a tray item's menu: one pane of glass under the icon */
 .tray-menu {{
   background: {body};
-  border: {rim};
-  box-shadow: {inset};
+  border: none;
+  box-shadow: none;
   border-radius: 22px;
   color: {MILK_TEXT};
 }}
 .tray-menu label, .tray-menu image {{ color: {MILK_TEXT}; }}
 .quick-panel headerbar {{
   background: {body}; border-radius: 999px; margin-bottom: 8px;
-  border: {rim}; box-shadow: {inset};
+  border: none; box-shadow: none;
   color: {MILK_TEXT};
 }}
 /* label alone already styles every label; a window.bar label here would
@@ -1144,24 +1143,24 @@ window.quick-window, window.quick-catcher {{ background: none; background-color:
 .tile:not(.active) {{ color: {MILK_TEXT}; }}
 .tile {{
   background: {body};
-  border: {rim};
-  box-shadow: {inset}, inset 0 -1px 0 alpha(black, 0.05);
+  border: none;
+  box-shadow: none;
 }}
 .tile.active {{
   background: linear-gradient(180deg, alpha({k['accent']}, 0.96), alpha({k['accent']}, 0.80));
-  border: 1px solid alpha(white, 0.35);
-  box-shadow: inset 0 1px 0 alpha(white, 0.35);
+  border: none;
+  box-shadow: none;
   color: {k['accent_fg']};
 }}
 .tile.active label {{ color: {k['accent_fg']}; text-shadow: none; }}
 .quick-footer button, .media button {{
   background: {body};
-  border: {rim};
-  box-shadow: {inset};
+  border: none;
+  box-shadow: none;
   color: {MILK_TEXT};
 }}
 .media {{
-  background: {body}; border: {rim}; box-shadow: {inset};
+  background: {body}; border: none; box-shadow: none;
   color: {MILK_TEXT};
 }}
 .media-title {{ color: {MILK_TEXT}; }}
@@ -1170,7 +1169,7 @@ window.quick-window, window.quick-catcher {{ background: none; background-color:
    "spotlight" preset): rows of small text over whatever page is behind. */
 window.launcher-window {{ background: none; background-color: transparent; }}
 .launcher-search, .launcher-results, .launcher-suggest, .launcher-keys {{
-  background: alpha(white, {max(opacity, 0.16):.3f}); border: {rim}; box-shadow: {inset}; color: {MILK_TEXT};
+  background: alpha(white, {max(opacity, 0.16):.3f}); border: none; box-shadow: none; color: {MILK_TEXT};
 }}
 /* macOS-style bars everywhere: accent fill on a soft dark trough */
 scale trough {{ background: alpha(black, 0.14); min-height: 12px; border-radius: 999px; border: none; }}
@@ -1187,15 +1186,15 @@ scale slider {{ background: white; box-shadow: 0 0 0 1px alpha(black, 0.12), 0 1
    are clear lens capsules like the demo */
 .quick-panel headerbar {{
   background: {body};
-  border: {rim}; border-radius: 999px; margin-bottom: 10px; min-height: 40px;
-  box-shadow: {inset};
+  border: none; border-radius: 999px; margin-bottom: 10px; min-height: 40px;
+  box-shadow: none;
 }}
 .quick-panel headerbar button {{ border-radius: 999px; color: {MILK_TEXT}; }}
 .quick-panel list.boxed-list {{ background: none; border: none; box-shadow: none; }}
 .quick-panel list.boxed-list > row {{
   background: {body};
-  border: {rim}; border-radius: 999px; margin-bottom: 6px;
-  box-shadow: {inset};
+  border: none; border-radius: 999px; margin-bottom: 6px;
+  box-shadow: none;
 }}
 .quick-panel list.boxed-list > row:hover {{ background: alpha(black, 0.06); }}
 .quick-panel list.boxed-list > row:focus-visible {{ outline: none; background: alpha(black, 0.08); }}
@@ -1204,29 +1203,29 @@ scale slider {{ background: white; box-shadow: 0 0 0 1px alpha(black, 0.12), 0 1
 .quick-panel checkbutton check {{ background: alpha(black, 0.14); border: none; }}
 .quick-panel checkbutton check:checked {{ background: {k['accent']}; }}
 .quick-panel button.flat:not(.circular):not(.pill-button) {{
-  background: {body}; border: {rim}; border-radius: 999px;
-  box-shadow: {inset}; padding: 8px 16px; color: {MILK_TEXT};
+  background: {body}; border: none; border-radius: 999px;
+  box-shadow: none; padding: 8px 16px; color: {MILK_TEXT};
 }}
 .quick-panel headerbar button.flat {{ background: none; border: none; box-shadow: none; padding: 4px; }}
 /* notifications: each card is a clear lens capsule (shaped by its alpha) */
 .notification-card {{
   background: {body};
-  border: {rim};
-  box-shadow: {inset}, inset 0 0 0 1px alpha(white, 0.08);
+  border: none;
+  box-shadow: none;
   color: {MILK_TEXT};
 }}
-.notification-card.critical {{ box-shadow: inset 0 0 0 1px alpha({k['error']}, 0.85), {inset}; }}
+.notification-card.critical {{ box-shadow: inset 0 0 0 1px alpha({k['error']}, 0.85); }}
 .notification-card label {{ text-shadow: none; color: {MILK_TEXT}; }}
 .notification-app {{ color: alpha({MILK_TEXT}, 0.70); }}
 .notification-action, .notification-close {{
   background: alpha(white, 0.18);
-  box-shadow: {inset}; border: {rim}; border-radius: 999px;
+  box-shadow: none; border: none; border-radius: 999px;
   color: {MILK_TEXT};
 }}
 /* the "Notifications / Clear" heading sits on glass too */
 .quick-notifications > box:first-child {{
-  background: {body}; border: {rim}; border-radius: 999px; padding: 2px 4px 2px 14px;
-  box-shadow: {inset};
+  background: {body}; border: none; border-radius: 999px; padding: 2px 4px 2px 14px;
+  box-shadow: none;
   color: {MILK_TEXT};
 }}
 .quick-notifications .notification-card {{

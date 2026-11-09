@@ -36,9 +36,11 @@ GLASS_RADIUS = {"swayctl-osd": 22}
 # A wider bezel met itself across a pane's corners on a diagonal crease:
 # each edge bent on its own and a bubble or pill read as eight pieces.
 # (swayctl-fx now rounds those corners, so up to 3x this is allowed.)
-EDGE_CAP = {"chosua": 17, "swayctl-bar": 14, FRAME_NS: 7, "swayctl-quick": 16,
-            "swayctl-launcher": 13, "swayctl-traymenu": 13, "swayctl-osd": 21,
-            "swayctl-notifications": 13}
+# The popups share the OSD's bezel (21): the same lens on every one of them. A pill or card shorter than two
+# bezels gets a narrower rim by itself (the shader caps the bezel at half the pane's thickness).
+EDGE_CAP = {"chosua": 17, "swayctl-bar": 14, FRAME_NS: 7, "swayctl-quick": 21,
+            "swayctl-launcher": 21, "swayctl-traymenu": 13, "swayctl-osd": 21,
+            "swayctl-notifications": 21}
 EDGE_CAP_DEFAULT = 11  # libadwaita's own panes (the settings window), cards
 
 
@@ -335,6 +337,11 @@ class EffectsModule:
         a surface that draws a shape casts a shadow of that shape (needs the fork's shaped shadows; a
         box shadow would ring the whole surface), one that fills its box a box shadow."""
         if not v.get("shadows") or ns in NO_SHADOW:
+            return False
+        # Glass panes drawn by their alpha (Quick Settings, the launcher, notifications) cast no shadow: it
+        # showed as a dark ring just outside each pane's bright rim, which the OSD (one pill, a soft halo)
+        # does not have. Without the glass they keep it, as windows do.
+        if mask and v.get("glass") and ns in GLASS_NAMESPACES:
             return False
         if mask and not (ctx is not None and "shaped-shadow" in fork_features(ctx.live)):
             return ns not in BOX_SHADOW_UNFIT

@@ -51,8 +51,15 @@ class EffectsTest(unittest.TestCase):
         for on in (True, False):
             cmds = run(fx, shadows=on, panels=True, glass=True)
             word = "enable" if on else "disable"
-            for ns in ("swayctl-quick", "swayctl-launcher", "swayctl-notifications", "swayctl-traymenu"):
-                self.assertIn(f'layer_effects "{ns}" "shadows {word}"', cmds, ns)
+            # glass panes drawn by their alpha cast no shadow (a dark ring outside their rim); the tray menu
+            # is not one of them
+            for ns in ("swayctl-quick", "swayctl-launcher", "swayctl-notifications"):
+                self.assertIn(f'layer_effects "{ns}" "shadows disable"', cmds, ns)
+            self.assertIn(f'layer_effects "swayctl-traymenu" "shadows {word}"', cmds)
+        # the same surfaces keep it when the glass is off, as windows do
+        cmds = run(fx, shadows=True, panels=True, glass=False)
+        for ns in ("swayctl-quick", "swayctl-launcher", "swayctl-notifications"):
+            self.assertIn(f'layer_effects "{ns}" "shadows enable"', cmds, ns)
             # the bar and the frame never cast one
             self.assertIn('layer_effects "swayctl-bar" "shadows disable"', cmds)
 
@@ -227,8 +234,9 @@ class GlassTest(unittest.TestCase):
         self.assertFalse(any("glass_edge" in c for c in cmds))
         # bar / Quick Settings: the same Liquid glass knobs as windows…
         lens = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-shaped", "glass-tune"]}, glass=True)
-        self.assertIn('layer_effects "swayctl-launcher" "glass_edge 13"', lens)  # capped at its corners
-        self.assertIn('layer_effects "swayctl-quick" "glass_edge 16"', lens)
+        # every popup has the OSD's bezel (21): the same lens everywhere
+        for ns in ("swayctl-launcher", "swayctl-quick", "swayctl-notifications", "swayctl-osd"):
+            self.assertIn(f'layer_effects "{ns}" "glass_edge 21"', lens, ns)
         self.assertIn('layer_effects "swayctl-launcher" "glass_highlight 0.9"', lens)
         self.assertIn('layer_effects "swayctl-quick" "glass_thickness 90"', lens)
         # …and they move with the sliders (no demo-capsule pinning)
@@ -238,7 +246,7 @@ class GlassTest(unittest.TestCase):
         self.assertIn('layer_effects "swayctl-launcher" "glass_refraction 90"', moved)   # asked for 120, held to 90
         self.assertIn('layer_effects "swayctl-quick" "glass_thickness 300"', moved)
         self.assertIn('layer_effects "swayctl-quick" "glass_highlight 0.2"', moved)
-        self.assertIn('layer_effects "swayctl-launcher" "glass_edge 5"', moved)  # 40 % of its 13
+        self.assertIn('layer_effects "swayctl-launcher" "glass_edge 8"', moved)  # 40 % of the popups' 21
         self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0"', moved)
 
     def test_glass_blur_needs_its_feature(self):
