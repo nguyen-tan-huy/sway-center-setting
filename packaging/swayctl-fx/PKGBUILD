@@ -6,7 +6,7 @@
 # the fork-only commands (blur, corner_radius...) over IPC, so that config
 # stays valid for plain sway.
 pkgname=swayctl-fx
-pkgver=0.6.r49.d56807728115a5a
+pkgver=0.6.r435.723620500868d01
 pkgrel=1
 pkgdesc="SwayFX with swayctl-center patches, installed alongside sway"
 arch=(x86_64)
@@ -36,7 +36,8 @@ pkgver() {
   local fx sc
   fx=$(git rev-parse --short HEAD)
   sc=$(git -C "$srcdir/scenefx" rev-parse --short HEAD)
-  printf "0.6.r%s.%s%s" "$(git rev-list --count 0.6..HEAD)" "$fx" "$sc"
+  # the count is both repos' commits, so a scenefx-only change still raises it
+  printf "0.6.r%s.%s%s" "$(( $(git rev-list --count 0.6..HEAD) + $(git -C "$srcdir/scenefx" rev-list --count HEAD) ))" "$fx" "$sc"
 }
 
 prepare() {
