@@ -85,15 +85,15 @@ class NativeBarTest(unittest.TestCase):
         b = json.loads(BarModule().files(bar(), c)["config.json"])["backdrop"]
         self.assertFalse(b["lens"])
         self.assertNotIn("halo-", BarModule().files(bar(), c)["style.css"])
-        c.values["effects"] |= {"glass": True, "glass_opacity": 50, "glass_blur": 40}
+        c.values["effects"] |= {"glass": True, "glass_opacity": 50, "glass_blur": 40}   # old stored values: ignored
         files = BarModule().files(bar(), c)
         b = json.loads(files["config.json"])["backdrop"]
         self.assertTrue(b["lens"])
-        self.assertAlmostEqual(b["lens_tint"], 0.10)   # = the capsule body CSS paints
-        self.assertAlmostEqual(b["frost"], 0.40)
+        self.assertAlmostEqual(b["lens_tint"], 0.04)   # = the capsule body CSS paints (the one look's)
+        self.assertAlmostEqual(b["frost"], 0.0)
         self.assertIn(".on-dark.halo-4 label", files["style.css"])
         c.values["effects"]["glass_opacity"] = 80
-        self.assertAlmostEqual(json.loads(BarModule().files(bar(), c)["config.json"])["backdrop"]["lens_tint"], 0.16)
+        self.assertAlmostEqual(json.loads(BarModule().files(bar(), c)["config.json"])["backdrop"]["lens_tint"], 0.04)
         # the bar's files are rebuilt whenever effects change
         self.assertIn("effects", BarModule.depends_on)
 
@@ -106,16 +106,17 @@ class NativeBarTest(unittest.TestCase):
         # the pill tint follows effects.glass_opacity (thinned while glass is
         # on: default 10 % -> 4 % floor so shaped panes still draw)
         self.assertIn("alpha(white, 0.040)", css)
-        c.values["effects"]["glass_opacity"] = 50
+        c.values["effects"]["glass_opacity"] = 50   # no setting any more: the body stays the one look's
         css = BarModule().files(bar(), c)["style.css"]
-        self.assertIn("alpha(white, 0.100)", css)   # moves with the slider
+        self.assertIn("alpha(white, 0.040)", css)
+        self.assertNotIn("alpha(white, 0.100)", css)
         self.assertIn("#1d1d1f", css)
         self.assertIn("alpha(black, 0.14)", css)  # soft dark trough under the blue bar
         # the UI draws only the shape of a pane: the rim light and the bend are the compositor's
         glass = css[css.index("liquid glass: demo precision lens"):]
         self.assertNotIn("1.5px solid alpha(white, 0.88)", glass)
         self.assertNotIn("inset 0 1px 0 alpha(white, 0.55)", glass)
-        self.assertIn(".osd {\n  background: alpha(white, 0.100);\n  border: none;\n  box-shadow: none;", glass)
+        self.assertIn(".osd {\n  background: alpha(white, 0.040);\n  border: none;\n  box-shadow: none;", glass)
 
     def test_osd_keys_bound_then_released(self):
         m = BarModule()

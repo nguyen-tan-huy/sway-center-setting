@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..glass import LOOK
 from .. import jsonc, owned, schema, swayconfig, swayipc, theming, themes, units
 from . import Context
 
@@ -286,7 +287,7 @@ def _glass_opacity(ctx: Context, theme=None) -> float:
     the glass (smoked on dark, milky on light)."""
     # Exactly the setting (0 = clear glass), only kept above 1%: the compositor
     # shapes the glass of popups by what's drawn, and fully clear isn't drawn.
-    base = ((ctx.values or {}).get("effects") or {}).get("glass_opacity", 50)
+    base = LOOK["opacity"]
     t = theme or ctx.theme
     return glass_tint(base, t is not None and t.dark)
 
@@ -502,7 +503,7 @@ def shell_milk(base: float, glass: bool) -> float:
 
 def milk_opacity(ctx, theme=None) -> float:
     """effects.glass_opacity as 0..1 for milk glass (see shell_milk)."""
-    base = ((ctx.values or {}).get("effects") or {}).get("glass_opacity", 50)
+    base = LOOK["opacity"]
     return shell_milk(base, _glass(ctx))
 
 
@@ -914,7 +915,7 @@ class BarModule(Component):
     @staticmethod
     def frame_config(ctx) -> dict[str, Any]:
         fx = (ctx.values or {}).get("effects") or {}
-        pct = fx.get("glass_opacity", 10)
+        pct = LOOK["opacity"]
         return {"glass": glass_desk(ctx) and _glass(ctx), "radius": fx.get("corner_radius", 12),
                 # the pane's white body: thin, but never none (shaped glass follows the alpha it reads)
                 "tint": round(max(0.04, min(0.4, pct / 100 * 0.6)), 3)}
@@ -938,7 +939,7 @@ class BarModule(Component):
         b = (ctx.values or {}).get("background") or {}
         color = b.get("color") or (ctx.theme.bg if ctx.theme else "#000000")
         image = str(ctx.data_dir / b["image"]) if b.get("image") else ""
-        pct = ((ctx.values or {}).get("effects") or {}).get("glass_opacity", 50)
+        pct = LOOK["opacity"]
         # each module is smoked glass with light text or milky glass with dark
         # text, whichever stands out more there; these are the two tints
         fx = (ctx.values or {}).get("effects") or {}
@@ -955,7 +956,7 @@ class BarModule(Component):
                 "lens": _glass(ctx), "lens_tint": round(shell_milk(pct, True), 4),
                 # without liquid glass the theme decides light or dark, like macOS' Appearance
                 "theme": "" if _glass(ctx) or not ctx.theme else ("dark" if ctx.theme.dark else "light"),
-                "frost": round(fx.get("glass_blur", 0) / 100, 3)}
+                "frost": round(LOOK["blur"] / 100, 3)}
 
     @staticmethod
     def notifications_config(ctx) -> dict[str, Any]:
@@ -1072,7 +1073,7 @@ scale trough {{ background: {trough}; }}
         from the wallpaper, popups from a look at the screen as they open):
         smoked glass with light text (on-dark) or milky glass with dark text
         (on-light), whichever stands out more there."""
-        return adaptive_css(((ctx.values or {}).get("effects") or {}).get("glass_opacity", 50),
+        return adaptive_css(LOOK["opacity"],
                             (ctx.theme.tokens if ctx.theme else {}).get("accent", "#0a84ff"),
                             (ctx.theme.tokens if ctx.theme else {}).get("accent_fg", "#ffffff"),
                             lens=_glass(ctx))

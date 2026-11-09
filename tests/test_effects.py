@@ -137,23 +137,21 @@ class GlassTextTest(unittest.TestCase):
             cmds = self.cmds(theme)
             self.assertTrue(all(c.endswith('"glass_text none"') for c in cmds if "glass_text" in c))
 
-    def test_the_glass_desk_is_clear_whatever_the_frost_is(self):
-        # a frost over a playing video makes the compositor blur the whole screen again for every frame
+    def test_the_glass_is_always_clear_whatever_an_old_frost_says(self):
+        # a frost over a playing video makes the compositor blur the whole screen again for every frame; there is
+        # no frost setting any more, so every style gets the same clear glass
         feats = ["glass", "glass-shaped", "glass-text", "glass-windows", "glass-blur", "glass-tune"]
         live = {"sway_original_version": "x", "swayctl_features": feats}
-        values = {"appearance": {"ui_style": "glass"}}
-        ctx = Context(Path("/app"), live=live, values=values, theme=themes.BUILTIN["dark"])
-        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True, "glass_blur": 60}, None, ctx)
+        for style in ("glass", "liquid"):
+            ctx = Context(Path("/app"), live=live, values={"appearance": {"ui_style": style}}, theme=themes.BUILTIN["dark"])
+            cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True, "glass_blur": 60}, None, ctx)
+            for ns in ("swayctl-quick", "swayctl-notifications", "swayctl-osd"):
+                self.assertIn(f'layer_effects "{ns}" "glass_blur 0"', cmds, (style, ns))
+            self.assertIn("blur_passes 0", cmds)
+        desk = Context(Path("/app"), live=live, values={"appearance": {"ui_style": "glass"}}, theme=themes.BUILTIN["dark"])
+        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True}, None, desk)
         self.assertIn('layer_effects "swayctl-frame" "glass enable"', cmds)
         self.assertIn('layer_effects "swayctl-frame" "glass_blur 0"', cmds)
-        self.assertIn('layer_effects "swayctl-quick" "glass_blur 0"', cmds)
-        self.assertIn('layer_effects "swayctl-notifications" "glass_blur 0"', cmds)
-        self.assertIn("blur_passes 0", cmds)
-        # any other style keeps the frost that was chosen
-        other = Context(Path("/app"), live=live, values={"appearance": {"ui_style": "liquid"}}, theme=themes.BUILTIN["dark"])
-        cmds = EffectsModule().commands("effects", schema.defaults()["effects"] | {"glass": True, "glass_blur": 60}, None, other)
-        self.assertIn('layer_effects "swayctl-quick" "glass_blur 60"', cmds)
-        self.assertNotIn("blur_passes 0", cmds)
 
     def test_the_launchers_selected_row_keeps_its_own_colour_not_the_key(self):
         from swayctl_center.modules import components
@@ -229,8 +227,8 @@ class GlassTest(unittest.TestCase):
         tune = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-tune"]}, glass=True)
         self.assertIn('layer_effects "swayctl-osd" "glass_edge 21"', tune)  # 100 % of its corners
         self.assertIn('layer_effects "swayctl-osd" "glass_thickness 90"', tune)
-        # dispersion follows the setting (default 0.35)
-        self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0.35"', tune)
+        # a faint colour fringe, the one look's (no setting)
+        self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0.1"', tune)
         self.assertFalse(any("glass_edge" in c for c in cmds))
         # bar / Quick Settings: the same Liquid glass knobs as windows…
         lens = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-shaped", "glass-tune"]}, glass=True)
@@ -239,20 +237,18 @@ class GlassTest(unittest.TestCase):
             self.assertIn(f'layer_effects "{ns}" "glass_edge 21"', lens, ns)
         self.assertIn('layer_effects "swayctl-launcher" "glass_highlight 0.9"', lens)
         self.assertIn('layer_effects "swayctl-quick" "glass_thickness 90"', lens)
-        # …and they move with the sliders (no demo-capsule pinning)
+        # …and there are no sliders: whatever an old settings file holds, every pane gets the one look
         moved = run(self.FX_GLASS | {"swayctl_features": ["glass", "glass-shaped", "glass-tune"]},
                     glass=True, glass_refraction=120, glass_thickness=300, glass_highlight=0.2,
-                    glass_edge=40, glass_chroma=0)
-        self.assertIn('layer_effects "swayctl-launcher" "glass_refraction 90"', moved)   # asked for 120, held to 90
-        self.assertIn('layer_effects "swayctl-quick" "glass_thickness 300"', moved)
-        self.assertIn('layer_effects "swayctl-quick" "glass_highlight 0.2"', moved)
-        self.assertIn('layer_effects "swayctl-launcher" "glass_edge 8"', moved)  # 40 % of the popups' 21
-        self.assertIn('layer_effects "swayctl-osd" "glass_chroma 0"', moved)
+                    glass_edge=40, glass_chroma=0.7, glass_blur=60)
+        for ns in ("swayctl-launcher", "swayctl-quick", "swayctl-osd", "swayctl-notifications"):
+            for want in ("glass_refraction 50", "glass_thickness 90", "glass_highlight 0.9", "glass_edge 21", "glass_chroma 0.1"):
+                self.assertIn(f'layer_effects "{ns}" "{want}"', moved, (ns, want))
 
     def test_glass_blur_needs_its_feature(self):
-        self.assertFalse(any("glass_blur" in c for c in run(self.FX_GLASS, glass=True, glass_blur=0)))
+        self.assertFalse(any("glass_blur" in c for c in run(self.FX_GLASS, glass=True)))
         fx = self.FX_GLASS | {"swayctl_features": ["glass", "glass-blur"]}
-        self.assertIn('layer_effects "swayctl-osd" "glass_blur 0"', run(fx, glass=True, glass_blur=0))
+        self.assertIn('layer_effects "swayctl-osd" "glass_blur 0"', run(fx, glass=True))
 
     def test_off_disables_glass(self):
         cmds = run(self.FX_GLASS, glass=False, panels=True)

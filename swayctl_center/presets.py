@@ -120,25 +120,6 @@ SHADOW_STYLES: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 
-def _glass(refraction: int, blur: int, opacity: int, highlight: float, edge: int, thickness: int,
-           chroma: float) -> dict[str, dict[str, Any]]:
-    return {"effects": {"glass": True, "glass_refraction": refraction, "glass_blur": blur, "glass_opacity": opacity,
-                        "glass_highlight": highlight, "glass_edge": edge, "glass_thickness": thickness,
-                        "glass_chroma": chroma}}
-
-
-# Liquid glass looks: each is every glass knob at once. "clear" is the stock values, so the
-# Liquid interface style reads as it.
-GLASS_STYLES: dict[str, dict[str, dict[str, Any]]] = {
-    "off": {"effects": {"glass": False}},
-    "subtle": _glass(25, 40, 15, 0.45, 60, 30, 0.0),     # a calm frosted sheet, a hint of bend
-    "clear": _glass(50, 0, 10, 0.9, 100, 90, 0.35),      # see-through glass with a bright rim
-    "frosted": _glass(40, 60, 22, 0.6, 100, 60, 0.0),    # milky: what is behind is blurred, soft light
-    "prism": _glass(90, 0, 8, 0.9, 100, 90, 0.6),        # clear, strong bend and a rainbow rim
-    "bold": _glass(140, 25, 10, 0.9, 180, 0, 0.0),       # deep lens: the biggest bend, no colour split
-}
-
-
 def _responsive(cpu: int, battery: int, gpu: int) -> dict[str, dict[str, Any]]:
     return {"priority": {"enabled": True, "focus_boost": True, "favor_windows": True, "compositor_realtime": True,
                          "pressure_guard": True, "gpu_guard": True, "cpu_cap": cpu, "cpu_cap_battery": battery,
@@ -157,7 +138,6 @@ PROFILES: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
     "effects.anim_feel": ANIM_FEELS,
     "layout.window_style": WINDOW_STYLES,
     "effects.shadow_style": SHADOW_STYLES,
-    "effects.glass_style": GLASS_STYLES,
     "priority.responsiveness": RESPONSIVENESS,
 }
 

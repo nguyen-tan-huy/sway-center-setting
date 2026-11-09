@@ -71,8 +71,6 @@ CHOICE_LABELS: dict[str, dict[str, str]] = {
     "effects.anim_feel": {"off": "Off", "subtle": "Subtle", "smooth": "Smooth", "playful": "Playful", "quick": "Quick",
                           "custom": "Custom"},
     "layout.window_style": {"compact": "Compact", "balanced": "Balanced", "spacious": "Spacious", "custom": "Custom"},
-    "effects.glass_style": {"off": "Off", "subtle": "Subtle", "clear": "Clear", "frosted": "Frosted", "prism": "Prism",
-                            "bold": "Bold", "custom": "Custom"},
     "effects.shadow_style": {"off": "Off", "soft": "Soft", "deep": "Deep", "custom": "Custom"},
     "priority.responsiveness": {"off": "Off", "balanced": "Balanced", "maximum": "Maximum", "custom": "Custom"},
     "keybindings.modifier": {"Mod4": "Super (Windows key)", "Mod1": "Alt", "Control": "Ctrl"},
@@ -95,12 +93,11 @@ def choice_label(path: str, value: str) -> str:
     return _(text[:1].upper() + text[1:])
 
 
-# What the effects section shows on the Desktop page: shadows, animations and liquid glass (corners and
+# What the effects section shows on the Desktop page: shadows and animations (there are no glass settings: one look, swayctl_center/glass.py; corners and
 # dimming come with the interface style; the corners start from it and can be tuned)
 EFFECT_GROUPS = [("Shadows", ["shadow_style"]),
                  ("Animations", ["anim_feel"]),
-                 ("Liquid glass", ["glass_style"]),
-                 ("~More effect options", ["glass", "glass_refraction", "glass_blur", "glass_highlight", "glass_thickness", "glass_edge", "glass_opacity", "glass_chroma", "corner_radius", "shadows", "shadow_blur_radius", "shadow_offset_y", "shadow_offset_x", "shadow_inactive",
+                 ("~More effect options", ["corner_radius", "shadows", "shadow_blur_radius", "shadow_offset_y", "shadow_offset_x", "shadow_inactive",
                                   "shadows_on_csd", "anim_open_close", "anim_move", "anim_workspace", "anim_slide", "anim_quick",
                                   "anim_curve", "anim_response", "anim_bounce", "anim_duration", "anim_close_pace",
                                   "anim_close_bounce", "anim_popin", "anim_fade"])]
@@ -121,9 +118,7 @@ GROUPS: dict[str, list[tuple[str, list[str]]]] = {
                                    "clock_format"])],
     "effects": [("Shadows", ["shadow_style"]),
                 ("Animations", ["anim_feel"]),
-                ("Liquid glass", ["glass_style"]),
-                ("~More effect options", ["dim_inactive", "glass", "glass_refraction", "glass_blur", "glass_highlight",
-                                          "glass_thickness", "glass_edge", "glass_opacity", "glass_chroma"]
+                ("~More effect options", ["dim_inactive"]
                  + ["corner_radius", "shadows", "shadow_blur_radius", "shadow_offset_y", "shadow_offset_x", "shadow_inactive",
                                   "shadows_on_csd", "anim_open_close", "anim_move", "anim_workspace", "anim_slide", "anim_quick",
                                   "anim_curve", "anim_response", "anim_bounce", "anim_duration", "anim_close_pace",
@@ -144,10 +139,6 @@ SLIDERS = {
     "scrolling.touchpad_glide": ("Short", "Long"), "scrolling.mouse_glide": ("Short", "Long"),
     "input.touchpad.pointer_accel": ("Slow", "Fast"), "input.pointer.pointer_accel": ("Slow", "Fast"),
     "input.touchpad.scroll_factor": ("Slow", "Fast"), "input.pointer.scroll_factor": ("Slow", "Fast"),
-    "effects.glass_refraction": ("Flat", "Bend"), "effects.glass_blur": ("Clear", "Frosted"),
-    "effects.glass_opacity": ("Clear", "Opaque"), "effects.glass_highlight": ("Matte", "Shiny"),
-    "effects.glass_edge": ("Thin", "Thick"), "effects.glass_chroma": ("None", "Rainbow"),
-    "effects.glass_thickness": ("Thin", "Thick"),
 }
 
 # number settings dragged with their value shown, in this unit
@@ -156,13 +147,6 @@ PIXELS = {"effects.corner_radius": ("Square", "Round", "px")}
 # number settings picked from a few named steps instead of dragged (a value that
 # is none of them - typed in the file, an old preset - shows nothing selected)
 LEVELS: dict[str, list[tuple[str, float]]] = {
-    "effects.glass_refraction": [("Off", 0), ("Subtle", 25), ("Medium", 50), ("Strong", 90), ("Max", 140)],
-    "effects.glass_opacity": [("Clear", 0), ("Light", 10), ("Medium", 30), ("Strong", 55), ("Opaque", 80)],
-    "effects.glass_blur": [("Clear", 0), ("Light", 25), ("Medium", 50), ("Frosted", 80), ("Max", 100)],
-    "effects.glass_highlight": [("Matte", 0.0), ("Soft", 0.45), ("Shiny", 0.9)],
-    "effects.glass_edge": [("Thin", 40), ("Normal", 100), ("Thick", 180), ("Max", 300)],
-    "effects.glass_chroma": [("None", 0.0), ("Subtle", 0.15), ("Normal", 0.35), ("Rainbow", 0.7)],
-    "effects.glass_thickness": [("Clear", 0), ("Thin", 30), ("Normal", 90), ("Thick", 300), ("Max", 800)],
     "effects.dim_inactive": [("Off", 0.0), ("Subtle", 0.06), ("Medium", 0.15), ("Strong", 0.3)],
     "effects.shadow_blur_radius": [("Tight", 8), ("Normal", 20), ("Soft", 40), ("Very soft", 70)],
     "effects.shadow_offset_y": [("None", 0), ("Slight", 6), ("Normal", 12), ("Deep", 24)],

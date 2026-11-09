@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..glass import LOOK
 from .. import swayconfig, swayipc
 from . import Context
 
@@ -51,8 +52,9 @@ GLASS_REFRACTION_MAX = 90
 GLASS_EDGE_SHARE_MAX = 150
 
 
-def glass_refraction(v: dict[str, Any]) -> int:
-    return min(int(v["glass_refraction"]), GLASS_REFRACTION_MAX)
+def glass_refraction(v: dict[str, Any] | None = None) -> int:
+    """The one look's pull (swayctl_center.glass): there is no setting for it."""
+    return min(int(LOOK["refraction"]), GLASS_REFRACTION_MAX)
 
 
 def glass_edge(target: str, share: int) -> int:
@@ -203,7 +205,7 @@ class EffectsModule:
             # The glass desk plays a video under everything: a frost makes the compositor blur the whole
             # screen again for every video frame (about twice the frame time at 120 Hz, measured), so
             # the desk is always clear glass - tools/video_glass_cost_probe.sh
-            frost = 0 if desk_style(ctx) else v["glass_blur"] / 100
+            frost = LOOK["blur"] / 100
             passes, radius = (0, 0) if frost <= 0 else (1 + round(2 * frost), max(1, round(5 * frost)))
             cmds += [f"blur_passes {passes}", f"blur_radius {radius}", "blur_saturation 1.4", "blur_brightness 1.08"]
         else:
@@ -254,17 +256,16 @@ class EffectsModule:
                     # follow the same settings the windows do
                     cmds.append(f'layer_effects "{ns}" "glass_refraction {glass_refraction(v)}"')
                     # rim/specular light: always part of the glass patch
-                    cmds.append(f'layer_effects "{ns}" "glass_highlight {v["glass_highlight"]:g}"')
+                    cmds.append(f'layer_effects "{ns}" "glass_highlight {LOOK["highlight"]:g}"')
                     if "glass-blur" in fork_features(ctx.live):
-                        blur = 0 if desk_style(ctx) else v["glass_blur"]
-                        cmds.append(f'layer_effects "{ns}" "glass_blur {blur}"')
+                        cmds.append(f'layer_effects "{ns}" "glass_blur {LOOK["blur"]}"')
                     if "glass-text" in fork_features(ctx.live):
                         cmds.append(f'layer_effects "{ns}" "glass_text {self.text_on(ns, ctx)}"')
                     if "glass-tune" in fork_features(ctx.live):
                         # rim path length + RGB dispersion (Thickness / colour at the rim)
-                        cmds.append(f'layer_effects "{ns}" "glass_edge {glass_edge(ns, v["glass_edge"])}"')
-                        cmds.append(f'layer_effects "{ns}" "glass_thickness {v["glass_thickness"]}"')
-                        cmds.append(f'layer_effects "{ns}" "glass_chroma {v["glass_chroma"]:g}"')
+                        cmds.append(f'layer_effects "{ns}" "glass_edge {glass_edge(ns, LOOK["edge_share"])}"')
+                        cmds.append(f'layer_effects "{ns}" "glass_thickness {LOOK["thickness"]}"')
+                        cmds.append(f'layer_effects "{ns}" "glass_chroma {LOOK["chroma"]:g}"')
         if "glass-windows" in fork_features(ctx.live):
             # no app window is glass (the settings window, chosua, the portal's dialogs): they are told once,
             # so a rule an older run left in sway is overruled by this one
@@ -313,7 +314,7 @@ class EffectsModule:
         css = ""
         if on and ctx.theme is not None:
             t = ctx.theme.tokens
-            css = portalglass.css(ctx.theme.dark, t["accent"], t["accent_fg"], shell_milk(v.get("glass_opacity", 50), True),
+            css = portalglass.css(ctx.theme.dark, t["accent"], t["accent_fg"], shell_milk(LOOK["opacity"], True),
                                  v.get("corner_radius", 12))
         try:
             portalglass.sync(on and bool(css), css)
@@ -356,11 +357,11 @@ class EffectsModule:
         # would draw a box the glass doesn't have
         tune = ""
         if glass:
-            tune += f", glass highlight {v.get('glass_highlight', 0.50):g}"
+            tune += f", glass highlight {LOOK['highlight']:g}"
             if ctx is not None and "glass-tune" in fork_features(ctx.live):
                 tune += (f", glass edge {{edge}}"
-                         f", glass thickness {v.get('glass_thickness', 200)}"
-                         f", glass chroma {v.get('glass_chroma', 0.40):g}")
+                         f", glass thickness {LOOK['thickness']}"
+                         f", glass chroma {LOOK['chroma']:g}")
         ink = ctx is not None and "glass-ink" in fork_features(ctx.live)
         # their shadow follows the Window shadows setting (a shadow of the panes they draw, not of
         # their box) when the compositor can; else none, as it always was
@@ -373,8 +374,8 @@ class EffectsModule:
             app_text = GLASS_APP_TEXT.get(app, text) if text else None
             if app_text and app in INK_APPS and ink:
                 app_text = "auto"
-            return (f"glass enable, glass refraction {glass_refraction(v)}, glass blur {v['glass_blur']}"
-                    + tune.replace("{edge}", str(glass_edge(app, v.get("glass_edge", 70))))
+            return (f"glass enable, glass refraction {glass_refraction(v)}, glass blur {LOOK['blur']}"
+                    + tune.replace("{edge}", str(glass_edge(app, LOOK["edge_share"])))
                     + (f", glass text {app_text}" if app_text else "") + f", border none, shadows {shadow}")
 
         cmds = [f'[app_id="{app}"] {what(app)}' for app in GLASS_APPS]

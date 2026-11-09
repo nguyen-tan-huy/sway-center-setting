@@ -68,14 +68,12 @@ class RetireOldChoicesTest(unittest.TestCase):
     def test_int_sliders_do_not_send_floats(self):
         # Gtk.Scale is float: glass_opacity 48.113 used to fail store validation
         from swayctl_center.ui import SLIDERS, slider_out
-        for path in ("effects.glass_opacity", "effects.glass_refraction",
-                     "effects.glass_blur", "effects.glass_edge", "effects.glass_thickness"):
+        for path in ("effects.corner_radius",):
             key = schema.lookup(*path.split(".", 1))
             self.assertEqual(key["type"] if isinstance(key, dict) else key.type, "int", path)
-            self.assertIn(path, SLIDERS)
             self.assertEqual(slider_out("int", 48.113), 48)
             self.assertEqual(slider_out("float", 0.556), 0.556)
-        k = schema.lookup("effects", "glass_opacity")
+        k = schema.lookup("effects", "glass_opacity")  # a kept (hidden) key still validates whole numbers only
         self.assertEqual(k.validate(48.0), 48)  # whole float ok
         self.assertEqual(k.validate(48), 48)
         with self.assertRaises(ValueError):

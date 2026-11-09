@@ -457,22 +457,16 @@ KEYS: tuple[Key, ...] = (
     Key("effects", "blur_radius", "int", 5, "Blur spread", min=0, max=10, hidden=True),
     Key("effects", "dim_inactive", "float", 0.0, "Dim unfocused windows", min=0.0, max=1.0),
     Key("effects", "panels", "bool", False, "Blur and shadow under the bar, notifications and launcher", hidden=True),
-    Key("effects", "glass", "bool", False, "Liquid glass popups"),
-    # one look for all the knobs below (presets.GLASS_STYLES); tuning a knob makes it Custom
-    Key("effects", "glass_style", "enum", "off", "Liquid glass",
-        choices=("off", "subtle", "clear", "frosted", "prism", "bold", "custom")),
-    # the liquid-glass knobs (see winaviation liquid-glass-demo): thickness is the
-    # kube.io / winaviation liquid-glass-demo capsule ("Precision Lens"):
-    # bezel = Bezel Width, thickness = Glass Thickness, refraction = Refraction
-    # Scale, highlight = Specular Opacity (bright rim), chroma = colour split.
-    # Windows, bar, Quick Settings and OSD all follow these.
-    Key("effects", "glass_refraction", "int", 50, "Glass refraction", min=0, max=140),
-    Key("effects", "glass_opacity", "int", 10, "Glass tint (%)", min=0, max=90),
-    Key("effects", "glass_blur", "int", 0, "Glass frost (%)", min=0, max=100),
-    Key("effects", "glass_highlight", "float", 0.90, "Glass specular", min=0.0, max=1.0),
-    Key("effects", "glass_edge", "int", 100, "Glass bezel (% of the corners)", min=10, max=300),
-    Key("effects", "glass_thickness", "int", 90, "Glass thickness (px)", min=0, max=1500),
-    Key("effects", "glass_chroma", "float", 0.35, "Glass dispersion", min=0.0, max=1.0),
+    Key("effects", "glass", "bool", False, "Liquid glass popups", hidden=True),
+    # There are no glass settings: one look for every pane of glass (swayctl_center/glass.py). The keys below are
+    # kept so stored settings still load; nothing reads them.
+    Key("effects", "glass_refraction", "int", 50, "Glass refraction", min=0, max=140, hidden=True),
+    Key("effects", "glass_opacity", "int", 10, "Glass tint (%)", min=0, max=90, hidden=True),
+    Key("effects", "glass_blur", "int", 0, "Glass frost (%)", min=0, max=100, hidden=True),
+    Key("effects", "glass_highlight", "float", 0.90, "Glass specular", min=0.0, max=1.0, hidden=True),
+    Key("effects", "glass_edge", "int", 100, "Glass bezel (% of the corners)", min=10, max=300, hidden=True),
+    Key("effects", "glass_thickness", "int", 90, "Glass thickness (px)", min=0, max=1500, hidden=True),
+    Key("effects", "glass_chroma", "float", 0.35, "Glass dispersion", min=0.0, max=1.0, hidden=True),
     Key("effects", "animations", "bool", False, "Window animations", hidden=True),  # retired master switch: one switch per kind now
     # each kind on its own (swayctl-fx "animation-kinds"); one speed for all
     Key("effects", "anim_feel", "enum", "off", "Animation feel",
@@ -724,7 +718,6 @@ HELP: dict[str, str] = {
     "effects.anim_workspace": "Switching workspaces is animated: a fade, or a slide when that option below is on.",
     "effects.anim_move": "Windows glide to their new place and size.",
     "layout.window_style": "How windows sit: Compact tiles them edge to edge with square corners; Balanced and Spacious leave gaps and round the corners.",
-    "effects.glass_style": "The look of the liquid glass on popups: Subtle, Clear, Frosted, Prism (rainbow rim) or Bold (deep lens). The options below tune it and make it Custom.",
     "effects.shadow_style": "The shadow under windows: none, a soft one, or a deep one.",
     "priority.responsiveness": "How much of the computer builds and indexers may use, so the desktop never stutters: Maximum keeps the most free.",
     "effects.anim_feel": "How windows, popups and workspaces move. Pick one; the options below tune it and make it Custom.",

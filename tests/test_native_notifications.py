@@ -71,12 +71,11 @@ class NativeNotificationsTest(unittest.TestCase):
     def test_glass_follows_the_theme(self):
         from swayctl_center.modules.components import _glass_opacity, _text_shadow
         c = ctx()
-        self.assertEqual(_glass_opacity(c, themes.BUILTIN["light"]), 0.1)   # demo lens default (10%)
-        c.values["effects"]["glass_opacity"] = 0
-        self.assertEqual(_glass_opacity(c, themes.BUILTIN["light"]), 0.02)  # clear, still drawn (8-bit safe)
-        self.assertAlmostEqual(_glass_opacity(c, themes.BUILTIN["dark"]), 0.45)  # dark: smoked, never clear
+        self.assertEqual(_glass_opacity(c, themes.BUILTIN["light"]), 0.1)   # the one look's body (10 %)
+        self.assertAlmostEqual(_glass_opacity(c, themes.BUILTIN["dark"]), 0.505)  # dark: smoked, never clear
+        # there is no setting for it: an old stored value changes nothing
         c.values["effects"]["glass_opacity"] = 100
-        self.assertAlmostEqual(_glass_opacity(c, themes.BUILTIN["dark"]), 1.0)
+        self.assertEqual(_glass_opacity(c, themes.BUILTIN["light"]), 0.1)
         self.assertIn("white", _text_shadow(themes.BUILTIN["light"].tokens))        # black text, light glow
         self.assertIn("black", _text_shadow(themes.BUILTIN["dark"].tokens))
 
@@ -106,7 +105,7 @@ class NativeNotificationsTest(unittest.TestCase):
         for gone in ("appearance.light_theme", "appearance.dark_theme", "bar.theme", "bar.margin_top", "bar.layer", "effects.blur", "effects.panels",
                      "notifications.control_center_width", "notifications.grouping"):
             self.assertNotIn(gone, shown)
-        for kept in ("bar.position", "effects.glass", "effects.shadows", "effects.shadow_blur_radius",
+        for kept in ("bar.position", "effects.shadows", "effects.shadow_blur_radius",
                      "notifications.timeout", "notifications.max_visible"):
             self.assertIn(kept, shown)
 

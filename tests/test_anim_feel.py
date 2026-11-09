@@ -71,7 +71,7 @@ class AnimationFeelTest(unittest.TestCase):
 
 
 class DesktopProfilesTest(unittest.TestCase):
-    PATHS = ("effects.anim_feel", "layout.window_style", "effects.shadow_style", "effects.glass_style",
+    PATHS = ("effects.anim_feel", "layout.window_style", "effects.shadow_style",
              "priority.responsiveness")
 
     def test_every_profile_is_a_choice_and_a_complete_set_of_valid_values(self):
@@ -115,20 +115,17 @@ class DesktopProfilesTest(unittest.TestCase):
                 dm._name_profiles()
                 self.assertEqual(dm.store.effective()["layout"]["window_style"], window, style)
 
-    def test_a_glass_look_sets_every_knob_and_the_liquid_style_reads_as_clear(self):
-        with tempfile.TemporaryDirectory() as d:
-            dm = daemon(Path(d))
-            knobs = ("glass_refraction", "glass_blur", "glass_opacity", "glass_highlight", "glass_edge",
-                     "glass_thickness", "glass_chroma")
-            for name, preset in presets.GLASS_STYLES.items():
-                if name != "off":
-                    self.assertEqual(set(preset["effects"]) - {"glass"}, set(knobs), name)
-            dm.store.set_many(presets.ui_style_values("liquid"))
-            dm._name_profiles()
-            self.assertEqual(dm.store.effective()["effects"]["glass_style"], "clear")
-            dm.store.set("effects", "glass_refraction", 77)
-            dm._name_profiles()
-            self.assertEqual(dm.store.effective()["effects"]["glass_style"], "custom")
+    def test_there_are_no_glass_settings_just_one_look(self):
+        from swayctl_center import glass, schema, ui
+        # no glass profile, and none of the knobs is shown anywhere
+        self.assertNotIn("effects.glass_style", presets.PROFILES)
+        shown = {n for _t, names in ui.EFFECT_GROUPS for n in names}
+        shown |= {n for _t, names in ui.GROUPS["effects"] for n in names}
+        for k in schema.KEYS:
+            if k.section == "effects" and k.name.startswith("glass"):
+                self.assertTrue(k.hidden, k.name)
+                self.assertNotIn(k.name, shown)
+        self.assertEqual(set(glass.LOOK), {"refraction", "blur", "highlight", "edge_share", "thickness", "chroma", "opacity"})
 
     def test_a_hand_tuned_value_makes_a_profile_custom(self):
         with tempfile.TemporaryDirectory() as d:

@@ -78,8 +78,9 @@ class AnimationSwitchesTest(unittest.TestCase):
             self.assertIn(n, shown)
         for n in ("shadows", "shadow_blur_radius"):
             self.assertIn(n, shown)
-        for n in ("glass", "glass_refraction", "glass_blur", "glass_highlight"):
-            self.assertIn(n, shown)  # liquid glass is tunable here
+        for n in ("glass", "glass_refraction", "glass_blur", "glass_highlight", "glass_thickness", "glass_edge",
+                  "glass_chroma", "glass_opacity", "glass_style"):
+            self.assertNotIn(n, shown)  # there are no glass settings: one look
         self.assertIn("corner_radius", shown)  # tunable: starts from the interface style
         self.assertIn(("effects", "Effects"), ui.PAGES["desktop"])
         # the rows that only matter for one choice follow it
