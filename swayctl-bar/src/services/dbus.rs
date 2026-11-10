@@ -264,22 +264,88 @@ pub async fn activate(system: &Connection, ap: &AccessPoint) -> bool {
 
 // ---- bluetooth (BlueZ) --------------------------------------------------------
 
+/// A connected Bluetooth device, with its battery when BlueZ reports one (`org.bluez.Battery1`: headsets,
+/// earbuds and mice that expose a battery service or the HFP battery indicator).
+#[derive(Clone, PartialEq, Debug)]
+pub struct BtDevice {
+    pub name: String,
+    /// 0-100, None when the device reports none
+    pub battery: Option<u8>,
+    /// the freedesktop icon BlueZ names for it ("audio-headset", "input-mouse"...)
+    pub icon: String,
+}
+
 #[derive(Clone, PartialEq, Default)]
 pub struct Bluetooth {
     pub available: bool,
     pub powered: bool,
+    /// connected devices, headsets first (what a quick look is for)
+    pub devices: Vec<BtDevice>,
+}
+
+/// What the tile says under "Bluetooth": On, or the connected device and its battery.
+pub fn bluetooth_label(b: &Bluetooth) -> String {
+    if !b.powered {
+        return "Off".into();
+    }
+    // the battery first: the tile is narrow and cuts the end of a long name, never the number
+    let one = |d: &BtDevice| match d.battery {
+        Some(p) => format!("{p}% · {}", d.name),
+        None => d.name.clone(),
+    };
+    match b.devices.as_slice() {
+        [] => "On".into(),
+        [d] => one(d),
+        [d, rest @ ..] => format!("{} +{}", one(d), rest.len()),
+    }
+}
+
+/// Every connected device with its battery, one per line, for the tile's tooltip.
+pub fn bluetooth_tooltip(b: &Bluetooth) -> String {
+    b.devices.iter().map(|d| match d.battery {
+        Some(p) => format!("{} — battery {p}%", d.name),
+        None => format!("{} — no battery reported", d.name),
+    }).collect::<Vec<_>>().join("\n")
+}
+
+/// The connected devices of BlueZ, from its object tree (Device1 + Battery1 on the same path).
+async fn connected_devices(conn: &Connection) -> Vec<BtDevice> {
+    type Objects = HashMap<OwnedObjectPath, HashMap<String, Props>>;
+    let Ok(p) = proxy(conn, "org.bluez", "/", "org.freedesktop.DBus.ObjectManager").await else { return vec![] };
+    let objects: zbus::Result<Objects> = p.call("GetManagedObjects", &()).await;
+    let Ok(objects) = objects else { return vec![] };
+    let mut out: Vec<BtDevice> = objects
+        .values()
+        .filter_map(|ifaces| {
+            let dev = ifaces.get("org.bluez.Device1")?;
+            if !val::<bool>(dev, "Connected").unwrap_or(false) {
+                return None;
+            }
+            let name = val::<String>(dev, "Alias").or_else(|| val::<String>(dev, "Name")).unwrap_or_else(|| "Device".into());
+            let battery = ifaces.get("org.bluez.Battery1").and_then(|b| val::<u8>(b, "Percentage")).map(|p| p.min(100));
+            Some(BtDevice { name, battery, icon: val::<String>(dev, "Icon").unwrap_or_default() })
+        })
+        .collect();
+    // audio first, then by name: the order must not jump between updates
+    out.sort_by_key(|d| (!d.icon.starts_with("audio"), d.name.clone()));
+    out
 }
 
 pub fn bluetooth(system: Connection) -> Rc<Watch<Bluetooth>> {
     let w = Watch::new(Bluetooth::default());
     let w2 = w.clone();
-    // any BlueZ object: the adapter also comes and goes (bluetoothd restart, rfkill)
+    // any BlueZ object: the adapter also comes and goes (bluetoothd restart, rfkill), and a device's battery
+    // changes on its own object (Battery1.Percentage)
     let conn = system.clone();
     on_any_change(system, "org.bluez", move || {
         let (w3, conn) = (w2.clone(), conn.clone());
         gtk::glib::spawn_future_local(async move {
             w3.set(match get_all(&conn, "org.bluez", "/org/bluez/hci0", "org.bluez.Adapter1").await {
-                Ok(p) => Bluetooth { available: true, powered: val(&p, "Powered").unwrap_or(false) },
+                Ok(p) => Bluetooth {
+                    available: true,
+                    powered: val(&p, "Powered").unwrap_or(false),
+                    devices: connected_devices(&conn).await,
+                },
                 Err(_) => Bluetooth::default(),
             });
         });
@@ -478,5 +544,35 @@ mod priority_tests {
         let old = serde_json::json!({"priority": {"enabled": true}});  // a daemon from before these settings
         assert_eq!(Priority::from_json(&old), None);
         assert_eq!(Priority::from_json(&serde_json::json!({})), None);
+    }
+}
+
+#[cfg(test)]
+mod bluetooth_label_tests {
+    use super::*;
+
+    fn dev(name: &str, battery: Option<u8>) -> BtDevice {
+        BtDevice { name: name.into(), battery, icon: "audio-headset".into() }
+    }
+
+    #[test]
+    fn the_tile_says_off_on_or_the_device_with_its_battery_first() {
+        let mut b = Bluetooth { available: true, powered: false, devices: vec![dev("WH-1000XM4", Some(72))] };
+        assert_eq!(bluetooth_label(&b), "Off");
+        b.powered = true;
+        b.devices.clear();
+        assert_eq!(bluetooth_label(&b), "On");
+        b.devices = vec![dev("WH-1000XM4", Some(72))];
+        assert_eq!(bluetooth_label(&b), "72% · WH-1000XM4");
+        b.devices = vec![dev("Buds", None)];
+        assert_eq!(bluetooth_label(&b), "Buds");
+        b.devices = vec![dev("WH-1000XM4", Some(72)), dev("Mouse", Some(40)), dev("Pad", None)];
+        assert_eq!(bluetooth_label(&b), "72% · WH-1000XM4 +2");
+    }
+
+    #[test]
+    fn the_tooltip_lists_every_device() {
+        let b = Bluetooth { available: true, powered: true, devices: vec![dev("A", Some(5)), dev("B", None)] };
+        assert_eq!(bluetooth_tooltip(&b), "A — battery 5%\nB — no battery reported");
     }
 }

@@ -247,7 +247,10 @@ impl QuickSettings {
             let t2 = t.clone();
             self.subs.follow(&svc.bluetooth, move |b| {
                 t2.root.set_visible(b.available);
-                t2.set(b.powered, if b.powered { "On" } else { "Off" });
+                t2.set(b.powered, &dbus::bluetooth_label(b));
+                // every connected device with its battery, for a closer look
+                let tip = dbus::bluetooth_tooltip(b);
+                t2.root.set_tooltip_text(if tip.is_empty() { None } else { Some(tip.as_str()) });
                 t2.icon.set_icon_name(Some(if b.powered || icons::bluetooth().starts_with("swayctl-") { icons::bluetooth() } else { "bluetooth-disabled-symbolic" }));
             });
             let (bt, s3) = (svc.bluetooth.clone(), sys.clone());
@@ -337,16 +340,27 @@ impl QuickSettings {
             row.remove(&icon);
             mute.set_child(Some(&icon));
             row.prepend(&mute);
+            // the output's name above the slider, inside the same capsule of glass
+            let caption = gtk::Label::builder().xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).width_chars(1)
+                .margin_start(46).css_classes(["caption", "sink-caption"]).build();
+            let slider_line = row;
+            slider_line.remove_css_class("slider-row");
+            let row = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["slider-row", "slider-row-tall"]).build();
+            row.append(&caption);
+            row.append(&slider_line);
             mute.connect_clicked(|_| procs::toggle_mute());
             let me = Rc::downgrade(self);
             let nav2 = nav.clone();
             let out = gtk::Button::builder().icon_name("go-next-symbolic").css_classes(["flat", "circular"])
                 .tooltip_text("Sound output").build();
             out.connect_clicked(move |_| if let Some(me) = me.upgrade() { nav2.push(&me.sink_page()) });
-            row.append(&out);
+            slider_line.append(&out);
             let updating = Rc::new(Cell::new(false));
             let (s2, u2) = (scale.clone(), updating.clone());
             self.subs.follow(&svc.volume, move |v| {
+                caption.set_label(&v.output);
+                caption.set_visible(!v.output.is_empty());
+                caption.set_tooltip_text(Some(&v.output));
                 icon.set_icon_name(Some(icons::volume(v)));
                 if (s2.value() as u32) != v.percent.min(100) {
                     u2.set(true);

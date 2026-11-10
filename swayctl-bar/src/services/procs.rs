@@ -30,6 +30,9 @@ pub struct Volume {
     pub available: bool,
     pub percent: u32,
     pub muted: bool,
+    /// the default output's name as the sound server describes it ("Built-in Audio Analog Stereo",
+    /// a headset's name...): what a quick look at "where is the sound going" needs
+    pub output: String,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -50,7 +53,32 @@ pub fn read_volume() -> Volume {
         .and_then(|p| p.trim().trim_end_matches('%').parse().ok())
         .unwrap_or(0);
     let muted = output(&["pactl", "get-sink-mute", "@DEFAULT_SINK@"]).is_some_and(|m| m.contains("yes"));
-    Volume { available: true, percent, muted }
+    Volume { available: true, percent, muted, output: default_output_name() }
+}
+
+/// The default sink's description. Looked up by name and remembered: a volume drag fires many events and
+/// `pactl list sinks` is a big answer, so it is asked again only for a sink not seen yet.
+fn default_output_name() -> String {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    thread_local! {
+        static NAMES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    }
+    let default = output(&["pactl", "get-default-sink"]).unwrap_or_default().trim().to_owned();
+    if default.is_empty() {
+        return String::new();
+    }
+    if let Some(known) = NAMES.with(|n| n.borrow().get(&default).cloned()) {
+        return known;
+    }
+    NAMES.with(|n| {
+        let mut n = n.borrow_mut();
+        n.clear();
+        for s in sinks() {
+            n.insert(s.name, s.description);
+        }
+        n.get(&default).cloned().unwrap_or_default()
+    })
 }
 
 pub fn volume() -> Rc<Watch<Volume>> {

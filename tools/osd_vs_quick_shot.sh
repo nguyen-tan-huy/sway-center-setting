@@ -21,13 +21,16 @@ case "$1" in
   get-sink-volume) echo "Volume: front-left: 32768 /  50% / -18.06 dB,   front-right: 32768 /  50% / -18.06 dB" ;;
   get-sink-mute) echo "Mute: no" ;;
   get-default-sink) echo fake ;;
+  --format=json) echo '[{"name":"fake","description":"Sony WH-1000XM4 (Bluetooth headset)"},{"name":"hdmi","description":"HDMI / DisplayPort"}]' ;;
 esac
 PA
 chmod +x /tmp/fakebin/pactl
-PATH=/tmp/fakebin:$PATH $bin --config-dir "$HOME/.config/swayctl-center/generated/bar" 2>/dev/null &
+python3 /home/repo/tools/fake_bluez.py ${BT_BATTERY:-72} >/tmp/out/fakebluez.log 2>&1 &
+sleep 1
+DBUS_SYSTEM_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS PATH=/tmp/fakebin:$PATH $bin --config-dir "$HOME/.config/swayctl-center/generated/bar" 2>/dev/null &
 sleep 2
 PATH=/tmp/fakebin:$PATH $bin osd volume-up; sleep 0.35
 grim -g "520,400 500x90" /tmp/out/ov-osd-live-${TAG:-q}.png
 sleep 2
 $bin quick; sleep 2.5
-grim -g "1100,30 430x420" /tmp/out/ov-quick-${TAG:-q}.png
+grim -g "1100,30 430x520" /tmp/out/ov-quick-${TAG:-q}.png
